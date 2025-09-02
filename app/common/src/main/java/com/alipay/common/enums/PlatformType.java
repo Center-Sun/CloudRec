@@ -48,6 +48,10 @@ public enum PlatformType {
     // MyCloudProvider(Enum.MyCloudProvider, "我的云", "My Cloud Provider");
 
     KINGSOFT_CLOUD(Enum.KINGSOFT_CLOUD, "金山云", "Kingsoft Cloud");
+    
+    VOLCENGINE(Enum.VOLCENGINE, "火山引擎", "Volcengine");
+    
+    UCLOUD(Enum.UCLOUD, "UCloud", "UCloud");
 
     private String platform;
     private String cnName;
@@ -113,5 +117,7 @@ public enum PlatformType {
         // [1] ADD_NEW_CLOUD : Add a new cloud provider enum.
         // public static final String MyCloudProvider = "My_Cloud_Provider";
         public static final String KINGSOFT_CLOUD = "KINGSOFT_CLOUD";
+        public static final String VOLCENGINE = "VOLCENGINE";
+        public static final String UCLOUD = "UCLOUD";
     }
 }

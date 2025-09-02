@@ -29,6 +29,10 @@ import TENCENT_CLOUD from '@/assets/images/TENCENT_CLOUD.png';
 // import My_Cloud_Provider from '@/assets/images/My_Cloud_Provider.png';
 import KINGSOFT_ACCOUNT from '@/assets/images/KINGSOFT_ACCOUNT.svg';
 import KINGSOFT_CLOUD from '@/assets/images/KINGSOFT_CLOUD.svg';
+import VOLCENGINE from '@/assets/images/VOLCENGINE.svg';
+import VOLCENGINE_ACCOUNT from '@/assets/images/VOLCENGINE_ACCOUNT.png';
+import UCLOUD from '@/assets/images/UCLOUD.svg';
+import UCLOUD_ACCOUNT from '@/assets/images/UCLOUD_ACCOUNT.png';
 import { FormattedMessage } from '@umijs/max';
 import { TimeRangePickerProps } from 'antd';
 import dayjs from 'dayjs';
@@ -103,6 +107,8 @@ export const platformURLMap = {
   // [5.1] ADD_NEW_CLOUD : Reference this icon address
   // My_Cloud_Provider_URL: My_Cloud_Provider
   KINGSOFT_CLOUD_URL: KINGSOFT_CLOUD,
+  VOLCENGINE_URL: VOLCENGINE,
+  UCLOUD_URL: UCLOUD,
 };
 
 export const overviewURLMap = {
@@ -128,6 +134,8 @@ export const accountURLMap = {
   // [5.2] ADD_NEW_CLOUD : Reference this icon address
   // My_Cloud_Provider: My_Cloud_Provider_ACCOUNT
   KINGSOFT_CLOUD: KINGSOFT_ACCOUNT,
+  VOLCENGINE: VOLCENGINE_ACCOUNT,
+  UCLOUD: UCLOUD_ACCOUNT,
 };
 
 export const RangePresets: TimeRangePickerProps['presets'] = [
