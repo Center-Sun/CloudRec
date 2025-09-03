@@ -47,9 +47,9 @@ public enum PlatformType {
     // [2] ADD_NEW_CLOUD : Add a new cloud provider.
     // MyCloudProvider(Enum.MyCloudProvider, "我的云", "My Cloud Provider");
 
-    KINGSOFT_CLOUD(Enum.KINGSOFT_CLOUD, "金山云", "Kingsoft Cloud");
+    KINGSOFT_CLOUD(Enum.KINGSOFT_CLOUD, "金山云", "Kingsoft Cloud"),
     
-    VOLCENGINE(Enum.VOLCENGINE, "火山引擎", "Volcengine");
+    VOLCENGINE(Enum.VOLCENGINE, "火山引擎", "Volcengine"),
     
     UCLOUD(Enum.UCLOUD, "UCloud", "UCloud");
 
