@@ -19,6 +19,9 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/aws/aws-sdk-go-v2/aws/retry"
+	"time"
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
@@ -67,11 +70,11 @@ import (
 	"github.com/aws/smithy-go/logging"
 	"github.com/core-sdk/log"
 	"github.com/core-sdk/schema"
-	"time"
 )
 
 // Services contains regional client of AWS services
 type Services struct {
+	Region                  string
 	EC2                     *ec2.Client
 	IAM                     *iam.Client
 	S3                      *s3.Client
@@ -173,6 +176,7 @@ func (s *Services) InitServices(cloudAccountParam schema.CloudAccountParam) (err
 		s.ElastiCache = initElastiCacheClient(cfg)
 	case ELB:
 		s.ELB = initELBClient(cfg)
+		s.EC2 = initEC2Client(cfg)
 	case CLB:
 		s.CLB = initCLBClient(cfg)
 	case FSxFileSystem:
@@ -428,6 +432,8 @@ func buildConfigWithRegion(region string, ak string, sk string) (aws.Config, err
 		config.WithClientLogMode(aws.LogRetries|aws.LogRequest),
 		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(ak, sk, "")),
 		config.WithRegion(region),
+		config.WithRetryMode(aws.RetryModeAdaptive), //https://docs.aws.amazon.com/sdkref/latest/guide/feature-retry-behavior.html
+
 	)
 	if err != nil {
 		log.GetWLogger().Error(fmt.Sprintf("fail to build config, %v", err))
@@ -435,4 +441,19 @@ func buildConfigWithRegion(region string, ak string, sk string) (aws.Config, err
 	}
 
 	return cfg, nil
+}
+
+// customRetryer returns a custom retryer,
+// if the Adaptive retry mode cannot meet the requirements,
+// you can use custom retryer to config.WithRetryer(customRetryer())
+//
+// https://docs.aws.amazon.com/sdk-for-go/v2/developer-guide/configure-retries-timeouts.html
+func customRetryer() func() aws.Retryer {
+	return func() aws.Retryer {
+		return retry.NewStandard(
+			func(o *retry.StandardOptions) {
+				o.MaxAttempts = 5
+				o.MaxBackoff = 60 * time.Second
+			})
+	}
 }
