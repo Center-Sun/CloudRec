@@ -81,7 +81,7 @@ public class ResourceController {
      * Aggregate query by asset type
      */
     @AuthenticateToken
-    @RateLimit(maxRequests = 10, timeWindowSeconds = 60, keyStrategy = KeyStrategy.IP, 
+    @RateLimit(maxRequests = 30, timeWindowSeconds = 60, keyStrategy = KeyStrategy.USER, 
                message = "Too many requests for aggregate list query. Please try again later.")
     @PostMapping("/queryAggregateAssets")
     public ApiResponse<ListVO<ResourceAggByInstanceTypeDTO>> queryAggregateAssets(@RequestBody QueryResourceListRequest req) {
@@ -94,7 +94,7 @@ public class ResourceController {
     /**
      * Multi-tenant division query asset list
      */
-    @RateLimit(maxRequests = 10, timeWindowSeconds = 60, keyStrategy = KeyStrategy.IP,
+    @RateLimit(maxRequests = 30, timeWindowSeconds = 60, keyStrategy = KeyStrategy.USER,
             message = "Too many requests for list query. Please try again later.")
     @AuthenticateToken
     @PostMapping("/queryResourceList")

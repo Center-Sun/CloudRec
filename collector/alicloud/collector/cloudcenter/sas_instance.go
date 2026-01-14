@@ -17,6 +17,7 @@ package cloudcenter
 
 import (
 	"context"
+
 	sas20181203 "github.com/alibabacloud-go/sas-20181203/v3/client"
 	"github.com/alibabacloud-go/tea/tea"
 	"github.com/cloudrec/alicloud/collector"
@@ -38,7 +39,7 @@ func GetCloudCenterResource() schema.Resource {
 		Desc:               `https://api.aliyun.com/product/Sas`,
 		ResourceDetailFunc: GetSasInstanceDetail,
 		RowField: schema.RowField{
-			ResourceId:   "$.Instance.InstanceId",
+			ResourceId:   "$.Instance.Uuid",
 			ResourceName: "$.Instance.InstanceName",
 			Address:      "$.Instance.InternetIp",
 		},

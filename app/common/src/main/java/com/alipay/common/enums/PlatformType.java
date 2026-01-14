@@ -51,7 +51,9 @@ public enum PlatformType {
     
     VOLCENGINE(Enum.VOLCENGINE, "火山引擎", "Volcengine"),
     
-    UCLOUD(Enum.UCLOUD, "UCloud", "UCloud");
+    UCLOUD(Enum.UCLOUD, "UCloud", "UCloud"),
+
+    CODO(Enum.CODO, "CODO", "CODO");
 
     private String platform;
     private String cnName;
@@ -119,5 +121,6 @@ public enum PlatformType {
         public static final String KINGSOFT_CLOUD = "KINGSOFT_CLOUD";
         public static final String VOLCENGINE = "VOLCENGINE";
         public static final String UCLOUD = "UCLOUD";
+        public static final String CODO = "CODO";
     }
 }

@@ -64,7 +64,7 @@ public class RiskController {
     private OperationLogService operationLogService;
 
 
-    @RateLimit(maxRequests = 10, timeWindowSeconds = 60, keyStrategy = RateLimit.KeyStrategy.IP,
+    @RateLimit(maxRequests = 30, timeWindowSeconds = 60, keyStrategy = RateLimit.KeyStrategy.USER,
             message = "Too many requests for risks query. Please try again later.")
     @AuthenticateToken
     @PostMapping("/queryRiskList")

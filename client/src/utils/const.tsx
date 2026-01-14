@@ -33,6 +33,8 @@ import VOLCENGINE from '@/assets/images/VOLCENGINE.svg';
 import VOLCENGINE_ACCOUNT from '@/assets/images/VOLCENGINE_ACCOUNT.png';
 import UCLOUD from '@/assets/images/UCLOUD.svg';
 import UCLOUD_ACCOUNT from '@/assets/images/UCLOUD_ACCOUNT.png';
+import CODO from '@/assets/images/CODO.svg';
+import CODO_ACCOUNT from '@/assets/images/CODO_ACCOUNT.svg';
 import { FormattedMessage } from '@umijs/max';
 import { TimeRangePickerProps } from 'antd';
 import dayjs from 'dayjs';
@@ -109,6 +111,7 @@ export const platformURLMap = {
   KINGSOFT_CLOUD_URL: KINGSOFT_CLOUD,
   VOLCENGINE_URL: VOLCENGINE,
   UCLOUD_URL: UCLOUD,
+  CODO_URL: CODO,
 };
 
 export const overviewURLMap = {
@@ -136,6 +139,7 @@ export const accountURLMap = {
   KINGSOFT_CLOUD: KINGSOFT_ACCOUNT,
   VOLCENGINE: VOLCENGINE_ACCOUNT,
   UCLOUD: UCLOUD_ACCOUNT,
+  CODO: CODO_ACCOUNT,
 };
 
 export const RangePresets: TimeRangePickerProps['presets'] = [

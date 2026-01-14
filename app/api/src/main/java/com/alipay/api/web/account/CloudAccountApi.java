@@ -58,7 +58,7 @@ public class CloudAccountApi {
     @Resource
     private CloudAccountService cloudAccountService;
 
-    @RateLimit(maxRequests = 10, timeWindowSeconds = 60, keyStrategy = RateLimit.KeyStrategy.IP,
+    @RateLimit(maxRequests = 30, timeWindowSeconds = 60, keyStrategy = RateLimit.KeyStrategy.USER,
             message = "Too many requests for accounts assets query. Please try again later.")
     @AuthenticateToken
     @PostMapping("/cloudAccountList")

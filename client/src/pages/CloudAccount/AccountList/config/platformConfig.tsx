@@ -75,6 +75,13 @@ export const PLATFORM_CONFIGS: Record<string, PlatformConfig> = {
       { name: 'sk', label: 'SK', required: true }
     ]
   },
+  'CODO': {
+    type: 'basic',
+    fields: [
+      { name: 'ak', label: 'AK', required: true },
+      { name: 'sk', label: 'SK', required: true }
+    ]
+  },
   'GCP': {
     type: 'json',
     fields: [
@@ -119,6 +126,6 @@ export const FORM_VALIDATION_RULES = {
 
 
 export const JSON_EDITOR_LIST = ['GCP'];
-export const BASIC_EDITOR_LIST = ['ALI_CLOUD', 'HUAWEI_CLOUD', 'BAIDU_CLOUD', 'AWS', 'TENCENT_CLOUD', 'KINGSOFT_CLOUD','AZURE','VOLCENGINE','UCLOUD'];
+export const BASIC_EDITOR_LIST = ['ALI_CLOUD', 'HUAWEI_CLOUD', 'BAIDU_CLOUD', 'AWS', 'TENCENT_CLOUD', 'KINGSOFT_CLOUD','AZURE','VOLCENGINE','UCLOUD','CODO'];
 export const EXCLUSIVE_EDITOR_LIST = ['ALI_CLOUD_PRIVATE'];
 export const EXTEND_EDITOR_LIST = ['HUAWEI_CLOUD_PRIVATE'];

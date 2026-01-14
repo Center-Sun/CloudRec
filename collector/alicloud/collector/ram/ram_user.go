@@ -17,6 +17,7 @@ package ram
 
 import (
 	"context"
+
 	"github.com/aliyun/alibaba-cloud-sdk-go/services/ram"
 	"github.com/cloudrec/alicloud/collector"
 	"github.com/core-sdk/constant"
@@ -74,14 +75,14 @@ func GetUserDetail(ctx context.Context, service schema.ServiceInterface, res cha
 			return err
 		}
 		for _, i := range response.Users.User {
-			//groups := listGroupsForUser(ctx, cli, i.UserName)
+			groups := listGroupsForUser(ctx, cli, i.UserName)
 			accessKeys := listAccessKeys(ctx, cli, i.UserName)
 			d := UserDetail{
 				User:       i,
 				UserDetail: getUser(ctx, cli, i.UserName),
-				//Groups:           groups,
+				Groups:           groups,
 				LoginProfile:         getLoginProfile(ctx, cli, i.UserName),
-				Policies:             listAttachedPolicies(ctx, cli, i.UserName, []ram.Group{}),
+				Policies:             listAttachedPolicies(ctx, cli, i.UserName, groups),
 				AccessKeys:           accessKeys,
 				ExistActiveAccessKey: existActiveAccessKey(accessKeys),
 			}

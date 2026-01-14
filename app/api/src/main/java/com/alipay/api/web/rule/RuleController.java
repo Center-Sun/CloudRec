@@ -95,7 +95,7 @@ public class RuleController {
     /**
      * Query risk rule list
      */
-    @RateLimit(maxRequests = 10, timeWindowSeconds = 60, keyStrategy = RateLimit.KeyStrategy.IP,
+    @RateLimit(maxRequests = 30, timeWindowSeconds = 60, keyStrategy = RateLimit.KeyStrategy.USER,
             message = "Too many requests for rules query. Please try again later.")
     @AuthenticateToken
     @PostMapping("/queryRuleList")
@@ -276,7 +276,7 @@ public class RuleController {
     /**
      * Query tenant select rule list
      */
-    @RateLimit(maxRequests = 10, timeWindowSeconds = 60, keyStrategy = RateLimit.KeyStrategy.IP,
+    @RateLimit(maxRequests = 30, timeWindowSeconds = 60, keyStrategy = RateLimit.KeyStrategy.USER,
             message = "Too many requests for rules query. Please try again later.")
     @AuthenticateToken
     @PostMapping("/queryEffectRuleList")

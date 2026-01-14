@@ -163,7 +163,7 @@ func GetPlatformConfig() *schema.Platform {
 			alb.GetALBResource(),
 			ram.GetRAMUserResource(),
 			ram.GetRAMRoleResource(),
-			//ram.GetGroupResource(),
+			ram.GetGroupResource(),
 			ims.GetAccountResource(),
 			actiontrail.GetActionTrailResource(),
 			cas.GetCERTResource(),
