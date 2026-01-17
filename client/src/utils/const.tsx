@@ -35,6 +35,8 @@ import UCLOUD from '@/assets/images/UCLOUD.svg';
 import UCLOUD_ACCOUNT from '@/assets/images/UCLOUD_ACCOUNT.png';
 import CODO from '@/assets/images/CODO.svg';
 import CODO_ACCOUNT from '@/assets/images/CODO_ACCOUNT.svg';
+import SENSECORE from '@/assets/images/SENSECORE.png';
+import SENSECORE_ACCOUNT from '@/assets/images/SENSECORE_ACCOUNT.png';
 import { FormattedMessage } from '@umijs/max';
 import { TimeRangePickerProps } from 'antd';
 import dayjs from 'dayjs';
@@ -112,6 +114,7 @@ export const platformURLMap = {
   VOLCENGINE_URL: VOLCENGINE,
   UCLOUD_URL: UCLOUD,
   CODO_URL: CODO,
+  SENSECORE_URL: SENSECORE,
 };
 
 export const overviewURLMap = {
@@ -140,6 +143,7 @@ export const accountURLMap = {
   VOLCENGINE: VOLCENGINE_ACCOUNT,
   UCLOUD: UCLOUD_ACCOUNT,
   CODO: CODO_ACCOUNT,
+  SENSECORE: SENSECORE_ACCOUNT,
 };
 
 export const RangePresets: TimeRangePickerProps['presets'] = [

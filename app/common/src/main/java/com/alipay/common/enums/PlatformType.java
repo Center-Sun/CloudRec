@@ -53,7 +53,9 @@ public enum PlatformType {
     
     UCLOUD(Enum.UCLOUD, "UCloud", "UCloud"),
 
-    CODO(Enum.CODO, "CODO", "CODO");
+    CODO(Enum.CODO, "CODO", "CODO"),
+
+    SENSECORE(Enum.SENSECORE, "SenseCore", "SenseCore");
 
     private String platform;
     private String cnName;
@@ -122,5 +124,6 @@ public enum PlatformType {
         public static final String VOLCENGINE = "VOLCENGINE";
         public static final String UCLOUD = "UCLOUD";
         public static final String CODO = "CODO";
+        public static final String SENSECORE = "SENSECORE";
     }
 }

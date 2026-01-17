@@ -30,6 +30,7 @@ import com.alipay.application.service.account.cloud.tencent.TencentCredential;
 import com.alipay.application.service.account.cloud.ucloud.UCloudCredential;
 import com.alipay.application.service.account.cloud.volcengine.VolcengineCredential;
 import com.alipay.application.service.account.cloud.idc.CODOCredential;
+import com.alipay.application.service.account.cloud.sensecore.SensecoreCredential;
 import com.alipay.application.service.common.utils.SpringUtils;
 import com.alipay.common.constant.MarkConstants;
 import com.alipay.common.enums.PlatformType;
@@ -137,6 +138,11 @@ public class PlatformUtils {
                     CODOCredential codoCredential = new Gson().fromJson(credentialsJson, CODOCredential.class);
                     map.put("ak", codoCredential.getAk());
                     map.put("sk", codoCredential.getSk());
+                    break;
+                case PlatformType.Enum.SENSECORE:
+                    SensecoreCredential sensecoreCredential = new Gson().fromJson(credentialsJson, SensecoreCredential.class);
+                    map.put("ak", sensecoreCredential.getAk());
+                    map.put("sk", sensecoreCredential.getSk());
                     break;
                 //  case PlatformType.Enum.My_Cloud_Provider:
                 // [3] ADD_NEW_CLOUD : To adapt the logic of parsing authentication information, you need to add a class corresponding to the cloud platform authentication information
