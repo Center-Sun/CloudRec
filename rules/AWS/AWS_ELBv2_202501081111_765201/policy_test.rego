@@ -7,19 +7,21 @@ test_internet_facing_open_sg_without_listener_is_not_risk if {
 		"ELB": {
 			"Scheme": "internet-facing",
 		},
-		"SecurityGroupDetail": [
+		"SecurityGroups": [
 			{
-				"IpPermissions": [
-					{
-						"FromPort": 80,
-						"ToPort":   80,
-						"IpRanges": [
-							{
-								"CidrIp": "0.0.0.0/0",
-							},
-						],
-					},
-				],
+				"SecurityGroup": {
+					"IpPermissions": [
+						{
+							"FromPort": 80,
+							"ToPort":   80,
+							"IpRanges": [
+								{
+									"CidrIp": "0.0.0.0/0",
+								},
+							],
+						},
+					],
+				},
 			},
 		],
 		"Listeners": null,
@@ -31,17 +33,21 @@ test_internet_facing_open_sg_with_listener_is_risk if {
 		"ELB": {
 			"Scheme": "internet-facing",
 		},
-		"SecurityGroupDetail": [
+		"SecurityGroups": [
 			{
-				"IpPermissions": [
-					{
-						"IpRanges": [
-							{
-								"CidrIp": "0.0.0.0/0",
-							},
-						],
-					},
-				],
+				"SecurityGroup": {
+					"IpPermissions": [
+						{
+							"FromPort": 80,
+							"ToPort":   80,
+							"IpRanges": [
+								{
+									"CidrIp": "0.0.0.0/0",
+								},
+							],
+						},
+					],
+				},
 			},
 		],
 		"Listeners": [
@@ -58,19 +64,21 @@ test_internet_facing_sg_open_to_unlistened_port_is_not_risk if {
 		"ELB": {
 			"Scheme": "internet-facing",
 		},
-		"SecurityGroupDetail": [
+		"SecurityGroups": [
 			{
-				"IpPermissions": [
-					{
-						"FromPort": 22,
-						"ToPort":   22,
-						"IpRanges": [
-							{
-								"CidrIp": "0.0.0.0/0",
-							},
-						],
-					},
-				],
+				"SecurityGroup": {
+					"IpPermissions": [
+						{
+							"FromPort": 22,
+							"ToPort":   22,
+							"IpRanges": [
+								{
+									"CidrIp": "0.0.0.0/0",
+								},
+							],
+						},
+					],
+				},
 			},
 		],
 		"Listeners": [

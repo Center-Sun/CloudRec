@@ -10,15 +10,15 @@ risk if {
 }
 
 ## 基础信息
-load_balancer_name := input.LoadBalancerName
-dns_name := input.DNSName
+load_balancer_name := input.ELB.LoadBalancerName
+dns_name := input.ELB.DNSName
 
 ## elb 网络类型
-net_scheme := input.Scheme
+net_scheme := input.ELB.Scheme
 
 ## 安全组入向规则
 sg_rules contains ip_permission if {
-    some ip_permission in input.SecurityGroupDetail[_].IpPermissions
+    some ip_permission in input.SecurityGroups[_].SecurityGroup.IpPermissions
 }
 
 sg_rule_open_to_all if {
