@@ -75,6 +75,7 @@ func GetPlatformConfig() *schema.Platform {
 			ec2.GetNetworkInterfaceResource(),
 			rds.GetRDSInstanceResource(),
 			elasticloadbalancing.GetELBResource(),
+			elasticloadbalancing.GetELBListenerResource(),
 			elasticloadbalancing.GetCLBResource(),
 			wafv2.GetWebACLResource(),
 			route53.GetDomainResource(),

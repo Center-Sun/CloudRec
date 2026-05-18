@@ -177,6 +177,8 @@ func (s *Services) InitServices(cloudAccountParam schema.CloudAccountParam) (err
 	case ELB:
 		s.ELB = initELBClient(cfg)
 		s.EC2 = initEC2Client(cfg)
+	case ELBListener:
+		s.ELB = initELBClient(cfg)
 	case CLB:
 		s.CLB = initCLBClient(cfg)
 	case FSxFileSystem:
