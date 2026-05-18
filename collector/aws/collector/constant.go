@@ -29,6 +29,7 @@ const (
 	Vpc                      string = "VPC"
 	CLB                      string = "CLB"
 	ELB                      string = "ELB"
+	ELBListener              string = "ELB Listener"
 	Domain                   string = "Domain"
 	Certificate              string = "Certificate"
 	Secret                   string = "Secret"

@@ -14,3 +14,8 @@ unsafe_protocol[p] if {
     some p in input.Listeners
     p.Protocol == "HTTP"
 }
+
+unsafe_protocol[p] if {
+    some p in input.Listeners
+    p.Listener.Protocol == "HTTP"
+}

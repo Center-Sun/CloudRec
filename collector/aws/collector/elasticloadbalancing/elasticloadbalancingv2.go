@@ -48,14 +48,36 @@ func GetELBResource() schema.Resource {
 	}
 }
 
+func GetELBListenerResource() schema.Resource {
+	return schema.Resource{
+		ResourceType:       collector.ELBListener,
+		ResourceTypeName:   "ELB Listener",
+		ResourceGroupType:  constant.NET,
+		Desc:               `https://docs.aws.amazon.com/elasticloadbalancing/latest/APIReference/API_DescribeListeners.html`,
+		ResourceDetailFunc: GetELBListenerDetail,
+		RowField: schema.RowField{
+			ResourceId:   "$.Listener.ListenerArn",
+			ResourceName: "$.Listener.ListenerArn",
+		},
+		Dimension: schema.Regional,
+	}
+}
+
 type ELBDetail struct {
 	ELB types.LoadBalancer
+
+	// Listeners information of the LoadBalancer
+	Listeners []types.Listener
 
 	// SecurityGroups information of the LoadBalancer
 	SecurityGroups []ec2.SecurityGroupDetail
 
 	// VPC information of the LoadBalancer
 	VPC []ec2.VPCDetail
+}
+
+type ELBListenerDetail struct {
+	Listener types.Listener
 }
 
 func GetELBDetail(ctx context.Context, iService schema.ServiceInterface, res chan<- any) error {
@@ -75,6 +97,22 @@ func GetELBDetail(ctx context.Context, iService schema.ServiceInterface, res cha
 	return nil
 }
 
+func GetELBListenerDetail(ctx context.Context, iService schema.ServiceInterface, res chan<- any) error {
+	elbClient := iService.(*collector.Services).ELB
+
+	listeners, err := describeELBListeners(ctx, elbClient)
+	if err != nil {
+		log.CtxLogger(ctx).Warn("describeELBListeners error", zap.Error(err))
+		return err
+	}
+
+	for _, listener := range listeners {
+		res <- ELBListenerDetail{Listener: listener}
+	}
+
+	return nil
+}
+
 func describeELBDetails(ctx context.Context, elbClient *elasticloadbalancingv2.Client, ec2Client *ec2_2.Client) (ELBDetails []ELBDetail, err error) {
 	elbs, err := describeELBs(ctx, elbClient)
 	if err != nil {
@@ -82,8 +120,13 @@ func describeELBDetails(ctx context.Context, elbClient *elasticloadbalancingv2.C
 	}
 
 	for _, elb := range elbs {
+		listeners, err := describeELBListenersByLoadBalancerArn(ctx, elbClient, elb.LoadBalancerArn)
+		if err != nil {
+			log.CtxLogger(ctx).Warn("DescribeListeners error", zap.Error(err), zap.String("loadBalancerArn", aws.ToString(elb.LoadBalancerArn)))
+		}
 		ELBDetails = append(ELBDetails, ELBDetail{
-			ELB: elb,
+			ELB:       elb,
+			Listeners: listeners,
 			VPC: ec2.DescribeVPCDetailsByFilters(ctx, ec2Client, []types2.Filter{
 				{
 					Name:   aws.String("vpc-id"),
@@ -99,6 +142,46 @@ func describeELBDetails(ctx context.Context, elbClient *elasticloadbalancingv2.C
 		})
 	}
 	return ELBDetails, nil
+}
+
+func describeELBListeners(ctx context.Context, c *elasticloadbalancingv2.Client) (listeners []types.Listener, err error) {
+	elbs, err := describeELBs(ctx, c)
+	if err != nil {
+		return nil, err
+	}
+	for _, elb := range elbs {
+		lbListeners, err := describeELBListenersByLoadBalancerArn(ctx, c, elb.LoadBalancerArn)
+		if err != nil {
+			log.CtxLogger(ctx).Warn("DescribeListeners error", zap.Error(err), zap.String("loadBalancerArn", aws.ToString(elb.LoadBalancerArn)))
+			continue
+		}
+		listeners = append(listeners, lbListeners...)
+	}
+	return listeners, nil
+}
+
+func describeELBListenersByLoadBalancerArn(ctx context.Context, c *elasticloadbalancingv2.Client, loadBalancerArn *string) (listeners []types.Listener, err error) {
+	if loadBalancerArn == nil {
+		return listeners, nil
+	}
+	input := &elasticloadbalancingv2.DescribeListenersInput{
+		LoadBalancerArn: loadBalancerArn,
+		PageSize:        aws.Int32(400),
+	}
+	output, err := c.DescribeListeners(ctx, input)
+	if err != nil {
+		return nil, err
+	}
+	listeners = append(listeners, output.Listeners...)
+	for output.NextMarker != nil {
+		input.Marker = output.NextMarker
+		output, err = c.DescribeListeners(ctx, input)
+		if err != nil {
+			return nil, err
+		}
+		listeners = append(listeners, output.Listeners...)
+	}
+	return listeners, nil
 }
 
 func describeELBs(ctx context.Context, c *elasticloadbalancingv2.Client) (elbs []types.LoadBalancer, err error) {
