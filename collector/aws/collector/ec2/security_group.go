@@ -52,47 +52,40 @@ type SecurityGroupDetail struct {
 	SecurityGroupRules []types.SecurityGroupRule
 }
 
+// GetSecurityGroupDetail streams each SecurityGroupDetail as soon as its
+// rules are fetched, avoiding the 30s consumer idle timeout in core-sdk
+// schema/platform.go. If the per-SG rule fetch fails, the SG is still
+// emitted with nil rules — mirroring the existing
+// DescribeSecurityGroupDetailsByFilters helper (the previous code path
+// dropped the SG entirely, which was inconsistent).
 func GetSecurityGroupDetail(ctx context.Context, iService schema.ServiceInterface, res chan<- any) (err error) {
 	client := iService.(*collector.Services).EC2
 
-	securityGroupDetails, err := describeSecurityGroupDetails(ctx, client)
+	securityGroups, err := describeSecurityGroups(ctx, client)
 	if err != nil {
 		return err
 	}
 
-	for _, securityGroupDetail := range securityGroupDetails {
-		res <- securityGroupDetail
-	}
-
-	return nil
-}
-
-// describeSecurityGroupDetails Describe SecurityGroupDetail with all your security group.
-// If you want to expand SecurityGroupDetail, expand this function
-func describeSecurityGroupDetails(ctx context.Context, c *ec2.Client) (securityGroupDetails []SecurityGroupDetail, err error) {
-
-	securityGroups, err := describeSecurityGroups(ctx, c)
-	if err != nil {
-		return nil, err
-	}
-
 	for _, securityGroup := range securityGroups {
-		securityGroupRules, err := describeSecurityGroupRulesByFilters(ctx, c, []types.Filter{
+		if securityGroup.GroupId == nil {
+			continue
+		}
+		securityGroupRules, err := describeSecurityGroupRulesByFilters(ctx, client, []types.Filter{
 			{
 				Name:   aws.String("group-id"),
 				Values: []string{*securityGroup.GroupId},
 			},
 		})
 		if err != nil {
-			continue
+			log.CtxLogger(ctx).Warn("describe security group rule failed", zap.Error(err))
 		}
-		securityGroupDetails = append(securityGroupDetails, SecurityGroupDetail{
+		res <- SecurityGroupDetail{
 			SecurityGroup:      securityGroup,
 			SecurityGroupRules: securityGroupRules,
-		})
+		}
 	}
 
-	return securityGroupDetails, nil
+	return nil
 }
 
 func DescribeSecurityGroupDetailsByFilters(ctx context.Context, c *ec2.Client, filters []types.Filter) (securityGroupDetails []SecurityGroupDetail) {

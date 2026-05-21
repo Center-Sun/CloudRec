@@ -19,7 +19,6 @@ import (
 	"context"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	ec2_2 "github.com/aws/aws-sdk-go-v2/service/ec2"
 	types2 "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2"
 	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2/types"
@@ -80,43 +79,16 @@ type ELBListenerDetail struct {
 	Listener types.Listener
 }
 
+// GetELBDetail streams each ELB detail as its secondary calls finish, so
+// the core-sdk consumer in schema/platform.go does not hit the 30s idle
+// timeout when a region has many load balancers.
 func GetELBDetail(ctx context.Context, iService schema.ServiceInterface, res chan<- any) error {
 	elbClient := iService.(*collector.Services).ELB
 	ec2Client := iService.(*collector.Services).EC2
 
-	ELBDetails, err := describeELBDetails(ctx, elbClient, ec2Client)
-	if err != nil {
-		log.CtxLogger(ctx).Warn("describeELBDetails error", zap.Error(err))
-		return err
-	}
-
-	for _, elb := range ELBDetails {
-		res <- elb
-	}
-
-	return nil
-}
-
-func GetELBListenerDetail(ctx context.Context, iService schema.ServiceInterface, res chan<- any) error {
-	elbClient := iService.(*collector.Services).ELB
-
-	listeners, err := describeELBListeners(ctx, elbClient)
-	if err != nil {
-		log.CtxLogger(ctx).Warn("describeELBListeners error", zap.Error(err))
-		return err
-	}
-
-	for _, listener := range listeners {
-		res <- ELBListenerDetail{Listener: listener}
-	}
-
-	return nil
-}
-
-func describeELBDetails(ctx context.Context, elbClient *elasticloadbalancingv2.Client, ec2Client *ec2_2.Client) (ELBDetails []ELBDetail, err error) {
 	elbs, err := describeELBs(ctx, elbClient)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	for _, elb := range elbs {
@@ -124,40 +96,53 @@ func describeELBDetails(ctx context.Context, elbClient *elasticloadbalancingv2.C
 		if err != nil {
 			log.CtxLogger(ctx).Warn("DescribeListeners error", zap.Error(err), zap.String("loadBalancerArn", aws.ToString(elb.LoadBalancerArn)))
 		}
-		ELBDetails = append(ELBDetails, ELBDetail{
-			ELB:       elb,
-			Listeners: listeners,
-			VPC: ec2.DescribeVPCDetailsByFilters(ctx, ec2Client, []types2.Filter{
+		var vpcDetails []ec2.VPCDetail
+		if elb.VpcId != nil {
+			vpcDetails = ec2.DescribeVPCDetailsByFilters(ctx, ec2Client, []types2.Filter{
 				{
 					Name:   aws.String("vpc-id"),
 					Values: []string{*elb.VpcId},
 				},
-			}),
+			})
+		}
+		res <- ELBDetail{
+			ELB:       elb,
+			Listeners: listeners,
+			VPC:       vpcDetails,
 			SecurityGroups: ec2.DescribeSecurityGroupDetailsByFilters(ctx, ec2Client, []types2.Filter{
 				{
 					Name:   aws.String("group-id"),
 					Values: elb.SecurityGroups,
 				},
 			}),
-		})
+		}
 	}
-	return ELBDetails, nil
+
+	return nil
 }
 
-func describeELBListeners(ctx context.Context, c *elasticloadbalancingv2.Client) (listeners []types.Listener, err error) {
-	elbs, err := describeELBs(ctx, c)
+// GetELBListenerDetail streams each listener per LB. Same rationale as
+// GetELBDetail — incremental push keeps the consumer's idle timer warm.
+func GetELBListenerDetail(ctx context.Context, iService schema.ServiceInterface, res chan<- any) error {
+	elbClient := iService.(*collector.Services).ELB
+
+	elbs, err := describeELBs(ctx, elbClient)
 	if err != nil {
-		return nil, err
+		return err
 	}
+
 	for _, elb := range elbs {
-		lbListeners, err := describeELBListenersByLoadBalancerArn(ctx, c, elb.LoadBalancerArn)
+		listeners, err := describeELBListenersByLoadBalancerArn(ctx, elbClient, elb.LoadBalancerArn)
 		if err != nil {
 			log.CtxLogger(ctx).Warn("DescribeListeners error", zap.Error(err), zap.String("loadBalancerArn", aws.ToString(elb.LoadBalancerArn)))
 			continue
 		}
-		listeners = append(listeners, lbListeners...)
+		for _, listener := range listeners {
+			res <- ELBListenerDetail{Listener: listener}
+		}
 	}
-	return listeners, nil
+
+	return nil
 }
 
 func describeELBListenersByLoadBalancerArn(ctx context.Context, c *elasticloadbalancingv2.Client, loadBalancerArn *string) (listeners []types.Listener, err error) {

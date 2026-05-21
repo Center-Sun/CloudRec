@@ -70,53 +70,46 @@ type VPCDetail struct {
 	VPNConnections []types.VpnConnection
 }
 
+// GetVPCDetail streams each VPC detail incrementally; each VPC fans out
+// to six secondary describe calls (Subnets/ACLs/Endpoints/Peering/VPN/
+// RouteTables), so buffering them all before pushing would risk the
+// core-sdk consumer's 30s idle timeout (see schema/platform.go).
 func GetVPCDetail(ctx context.Context, iService schema.ServiceInterface, res chan<- any) error {
 	client := iService.(*collector.Services).EC2
 
-	VPCDetails, err := describeVPCDetails(ctx, client)
+	vpcs, err := describeVpcs(ctx, client)
 	if err != nil {
 		return err
 	}
 
-	for _, vpc := range VPCDetails {
-		res <- vpc
+	for _, vpc := range vpcs {
+		if vpc.VpcId == nil {
+			continue
+		}
+		vpcId := *vpc.VpcId
+		res <- VPCDetail{
+			VPC:  vpc,
+			Name: utils.GetNameFromTags(vpc.Tags),
+			Subnets: DescribeSubnetsByFilters(ctx, client, []types.Filter{
+				{
+					Name:   aws.String("vpc-id"),
+					Values: []string{vpcId},
+				},
+			}),
+			ACLs: DescribeNetworkAclsByFilters(ctx, client, []types.Filter{
+				{
+					Name:   aws.String("vpc-id"),
+					Values: []string{vpcId},
+				},
+			}),
+			VPCEndpoints:          describeVpcEndpoints(ctx, client, vpcId),
+			VPCPeeringConnections: describeVpcPeeringConnections(ctx, client, vpcId),
+			VPNConnections:        describeVpnConnections(ctx, client, vpcId),
+			RouteTables:           describeRouteTablesByVpc(ctx, client, vpcId),
+		}
 	}
 
 	return nil
-}
-
-// describeVPCDetails Describe VPCDetail with all your vpc.
-// // If you want to expand VPCDetail, expand this function.
-func describeVPCDetails(ctx context.Context, c *ec2.Client) (VPCDetails []VPCDetail, err error) {
-
-	vpcs, err := describeVpcs(ctx, c)
-	if err != nil {
-		return nil, err
-	}
-
-	for _, vpc := range vpcs {
-		VPCDetails = append(VPCDetails, VPCDetail{
-			VPC:  vpc,
-			Name: utils.GetNameFromTags(vpc.Tags),
-			Subnets: DescribeSubnetsByFilters(ctx, c, []types.Filter{
-				{
-					Name:   aws.String("vpc-id"),
-					Values: []string{*vpc.VpcId},
-				},
-			}),
-			ACLs: DescribeNetworkAclsByFilters(ctx, c, []types.Filter{
-				{
-					Name:   aws.String("vpc-id"),
-					Values: []string{*vpc.VpcId},
-				},
-			}),
-			VPCEndpoints:          describeVpcEndpoints(ctx, c, *vpc.VpcId),
-			VPCPeeringConnections: describeVpcPeeringConnections(ctx, c, *vpc.VpcId),
-			VPNConnections:        describeVpnConnections(ctx, c, *vpc.VpcId),
-			RouteTables:           describeRouteTablesByVpc(ctx, c, *vpc.VpcId),
-		})
-	}
-	return VPCDetails, nil
 }
 
 func DescribeVPCDetailsByFilters(ctx context.Context, c *ec2.Client, filters []types.Filter) (VPCDetails []VPCDetail) {

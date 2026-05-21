@@ -59,37 +59,27 @@ type InstanceDetail struct {
 	VPCSecurityGroups []ec2Type.SecurityGroup
 }
 
+// GetInstanceDetail streams each RDS instance detail as its security
+// group lookups finish, to avoid the 30s consumer idle timeout in
+// core-sdk schema/platform.go.
 func GetInstanceDetail(ctx context.Context, service schema.ServiceInterface, res chan<- any) error {
 	services := service.(*collector.Services)
 	rdsClient := services.RDS
 	ec2Client := services.EC2
 
-	instanceDetails, err := describeInstanceDetails(ctx, rdsClient, ec2Client)
+	instances, err := describeInstances(ctx, rdsClient)
 	if err != nil {
 		return err
 	}
 
-	for _, instanceDetail := range instanceDetails {
-		res <- instanceDetail
-	}
-	return nil
-}
-
-func describeInstanceDetails(ctx context.Context, rdsClient *rds.Client, ec2Client *ec2.Client) (instanceDetails []InstanceDetail, err error) {
-
-	instances, err := describeInstances(ctx, rdsClient)
-	if err != nil {
-		return nil, err
-	}
 	for _, instance := range instances {
-		instanceDetails = append(instanceDetails, InstanceDetail{
+		res <- InstanceDetail{
 			DBInstance:        instance,
 			DBSecurityGroups:  describeDBSecurityGroups(ctx, rdsClient, instance.DBSecurityGroups),
 			VPCSecurityGroups: describeVPCSecurityGroups(ctx, ec2Client, instance.VpcSecurityGroups),
-		})
+		}
 	}
-
-	return instanceDetails, nil
+	return nil
 }
 
 func describeVPCSecurityGroups(ctx context.Context, ec2Client *ec2.Client, groups []rdsType.VpcSecurityGroupMembership) (vpcSecurityGroups []ec2Type.SecurityGroup) {
