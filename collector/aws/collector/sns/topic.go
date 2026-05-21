@@ -52,7 +52,12 @@ type SNSTopicDetail struct {
 	Tags          []types.Tag
 }
 
-// GetSNSTopicDetail fetches the details for all SNS topics.
+// GetSNSTopicDetail fetches the details for all SNS topics. Each
+// detail is pushed to res as its per-topic GetAttributes /
+// ListSubscriptions / ListTags calls finish; do not refactor this
+// into a build-slice-then-push pattern, as that would risk the 30s
+// consumer idle timeout in core-sdk schema/platform.go (see commit
+// 8295d1b).
 func GetSNSTopicDetail(ctx context.Context, service schema.ServiceInterface, res chan<- any) error {
 	client := service.(*collector.Services).SNS
 

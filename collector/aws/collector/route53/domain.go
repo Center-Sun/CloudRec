@@ -161,36 +161,27 @@ type DomainDetail struct {
 	WhoIsServer *string
 }
 
+// GetTheDomainDetail streams each Route53 domain detail as its
+// GetDomainDetail call completes, avoiding the 30s consumer idle timeout
+// in core-sdk schema/platform.go when an account has many domains.
 func GetTheDomainDetail(ctx context.Context, service schema.ServiceInterface, res chan<- any) error {
 
 	client := service.(*collector.Services).Route53Domains
 
-	domainDetails, err := describeDomainDetails(ctx, client)
+	domains, err := listDomains(ctx, client)
 	if err != nil {
-		log.CtxLogger(ctx).Warn("describeDomainDetails error", zap.Error(err))
+		log.CtxLogger(ctx).Warn("listDomains error", zap.Error(err))
 		return err
 	}
 
-	for _, domainDetail := range domainDetails {
-		res <- domainDetail
+	for _, domain := range domains {
+		res <- TheDomainDetail{
+			DomainSummary: domain,
+			DomainDetail:  getDomainDetail(ctx, client, domain),
+		}
 	}
 
 	return nil
-}
-
-func describeDomainDetails(ctx context.Context, c *route53domains.Client) (domainDetails []TheDomainDetail, err error) {
-	domains, err := listDomains(ctx, c)
-	if err != nil {
-		log.CtxLogger(ctx).Warn("listDomains error", zap.Error(err))
-		return nil, err
-	}
-	for _, domain := range domains {
-		domainDetails = append(domainDetails, TheDomainDetail{
-			DomainSummary: domain,
-			DomainDetail:  getDomainDetail(ctx, c, domain),
-		})
-	}
-	return domainDetails, nil
 }
 
 func listDomains(ctx context.Context, c *route53domains.Client) (domains []types.DomainSummary, err error) {

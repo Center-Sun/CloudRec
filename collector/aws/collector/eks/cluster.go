@@ -47,7 +47,11 @@ type ClusterDetail struct {
 	Cluster *types.Cluster
 }
 
-// GetClusterDetail fetches the details for all EKS clusters in a region.
+// GetClusterDetail fetches the details for all EKS clusters in a
+// region. Each detail is pushed to res as its per-cluster DescribeCluster
+// call finishes; do not refactor this into a build-slice-then-push
+// pattern, as that would risk the 30s consumer idle timeout in core-sdk
+// schema/platform.go (see commit 8295d1b).
 func GetClusterDetail(ctx context.Context, service schema.ServiceInterface, res chan<- any) error {
 	client := service.(*collector.Services).EKS
 

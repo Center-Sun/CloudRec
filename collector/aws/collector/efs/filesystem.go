@@ -52,34 +52,25 @@ type FileSystemDetail struct {
 	FileSystemPolicy map[string]interface{}
 }
 
+// GetFileSystemDetail streams each EFS file system detail as its policy
+// fetch completes, avoiding the 30s consumer idle timeout in core-sdk
+// schema/platform.go when a region has many file systems.
 func GetFileSystemDetail(ctx context.Context, service schema.ServiceInterface, res chan<- any) error {
 	client := service.(*collector.Services).EFS
 
-	fileSystemDetails, err := describeFileSystemDetails(ctx, client)
+	fileSystems, err := describeFileSystem(ctx, client)
 	if err != nil {
-		log.CtxLogger(ctx).Warn("describeFileSystemDetails error", zap.Error(err))
+		log.CtxLogger(ctx).Warn("describeFileSystem error", zap.Error(err))
 		return err
 	}
 
-	for _, fileSystemDetail := range fileSystemDetails {
-		res <- fileSystemDetail
+	for _, fileSystem := range fileSystems {
+		res <- FileSystemDetail{
+			FileSystem:       fileSystem,
+			FileSystemPolicy: getFileSystemPolicy(ctx, client, fileSystem),
+		}
 	}
 	return nil
-}
-
-func describeFileSystemDetails(ctx context.Context, c *efs.Client) (fileSystemDetails []FileSystemDetail, err error) {
-	fileSystems, err := describeFileSystem(ctx, c)
-	if err != nil {
-		log.CtxLogger(ctx).Warn("describeFileSystem error", zap.Error(err))
-		return nil, err
-	}
-	for _, fileSystem := range fileSystems {
-		fileSystemDetails = append(fileSystemDetails, FileSystemDetail{
-			FileSystem:       fileSystem,
-			FileSystemPolicy: getFileSystemPolicy(ctx, c, fileSystem),
-		})
-	}
-	return fileSystemDetails, nil
 }
 
 func getFileSystemPolicy(ctx context.Context, c *efs.Client, fileSystem types.FileSystemDescription) (policy map[string]interface{}) {

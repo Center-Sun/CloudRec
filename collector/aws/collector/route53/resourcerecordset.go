@@ -50,38 +50,27 @@ type RecordSetDetailDetail struct {
 	ResourceRecordSets []types.ResourceRecordSet
 }
 
+// GetResourceRecordSetDetail streams each hosted-zone record set as the
+// per-zone ListResourceRecordSets paginator completes, avoiding the 30s
+// consumer idle timeout in core-sdk schema/platform.go when an account
+// has many hosted zones.
 func GetResourceRecordSetDetail(ctx context.Context, service schema.ServiceInterface, res chan<- any) error {
 	client := service.(*collector.Services).Route53
 
-	domainRRDetails, err := describeDomainRRDetails(ctx, client)
+	hostedZones, err := listHostedZones(ctx, client)
 	if err != nil {
-		log.CtxLogger(ctx).Warn("describeDomainRRDetails error", zap.Error(err))
+		log.CtxLogger(ctx).Warn("listHostedZones error", zap.Error(err))
 		return err
 	}
 
-	for _, domainRRDetail := range domainRRDetails {
-		res <- domainRRDetail
+	for _, hostedZone := range hostedZones {
+		res <- RecordSetDetailDetail{
+			HostedZone:         hostedZone,
+			ResourceRecordSets: listResourceRecordSets(ctx, client, hostedZone),
+		}
 	}
 
 	return nil
-}
-
-func describeDomainRRDetails(ctx context.Context, c *route53.Client) (domainRRDetails []RecordSetDetailDetail, err error) {
-
-	hostedZones, err := listHostedZones(ctx, c)
-	if err != nil {
-		log.CtxLogger(ctx).Warn("listHostedZones error", zap.Error(err))
-		return nil, err
-	}
-
-	for _, hostedZone := range hostedZones {
-		domainRRDetails = append(domainRRDetails, RecordSetDetailDetail{
-			HostedZone:         hostedZone,
-			ResourceRecordSets: listResourceRecordSets(ctx, c, hostedZone),
-		})
-	}
-
-	return domainRRDetails, nil
 }
 
 func listResourceRecordSets(ctx context.Context, c *route53.Client, hostZone types.HostedZone) (resourceRecordSets []types.ResourceRecordSet) {

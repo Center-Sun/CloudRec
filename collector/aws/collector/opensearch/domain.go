@@ -47,7 +47,11 @@ type DomainDetail struct {
 	DomainStatus *types.DomainStatus
 }
 
-// GetDomainDetail fetches the details for all OpenSearch domains in a region.
+// GetDomainDetail fetches the details for all OpenSearch domains in a
+// region. Each detail is pushed to res as its per-domain DescribeDomain
+// call finishes; do not refactor this into a build-slice-then-push
+// pattern, as that would risk the 30s consumer idle timeout in core-sdk
+// schema/platform.go (see commit 8295d1b).
 func GetDomainDetail(ctx context.Context, service schema.ServiceInterface, res chan<- any) error {
 	client := service.(*collector.Services).OpenSearch
 

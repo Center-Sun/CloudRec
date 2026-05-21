@@ -50,6 +50,10 @@ type SecretDetail struct {
 }
 
 // GetSecretDetail fetches the details for all Secrets Manager secrets.
+// Each detail is pushed to res as its per-secret GetResourcePolicy
+// finishes; do not refactor this into a build-slice-then-push pattern,
+// as that would risk the 30s consumer idle timeout in core-sdk
+// schema/platform.go (see commit 8295d1b).
 func GetSecretDetail(ctx context.Context, service schema.ServiceInterface, res chan<- any) error {
 	client := service.(*collector.Services).SecretsManager
 

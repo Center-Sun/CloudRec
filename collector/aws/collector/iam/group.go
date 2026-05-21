@@ -50,35 +50,26 @@ type GroupDetail struct {
 	Users []types.User
 }
 
+// GetGroupDetail streams each IAM group detail as its user lookup
+// completes, avoiding the 30s consumer idle timeout in core-sdk
+// schema/platform.go when an account has many groups.
 func GetGroupDetail(ctx context.Context, service schema.ServiceInterface, res chan<- any) error {
 	client := service.(*collector.Services).IAM
 
-	groupDetails, err := describeGroupDetails(ctx, client)
+	groups, err := getGroupAuthorizationDetails(ctx, client)
 	if err != nil {
-		log.CtxLogger(ctx).Warn("describeGroupDetails error", zap.Error(err))
+		log.CtxLogger(ctx).Warn("getGroupAuthorizationDetails error", zap.Error(err))
 		return err
 	}
 
-	for _, groupDetail := range groupDetails {
-		res <- groupDetail
-	}
-	return nil
-}
-
-func describeGroupDetails(ctx context.Context, c *iam.Client) (groupDetails []GroupDetail, err error) {
-	groups, err := getGroupAuthorizationDetails(ctx, c)
-	if err != nil {
-		log.CtxLogger(ctx).Warn("getGroupAuthorizationDetails error", zap.Error(err))
-		return nil, err
-	}
 	for _, group := range groups {
-		groupDetails = append(groupDetails, GroupDetail{
+		res <- GroupDetail{
 			Group: group,
-			Users: getGroupUsers(ctx, c, group.GroupName),
-		})
+			Users: getGroupUsers(ctx, client, group.GroupName),
+		}
 	}
 
-	return groupDetails, nil
+	return nil
 }
 
 func getGroupUsers(ctx context.Context, c *iam.Client, groupName *string) []types.User {

@@ -52,37 +52,28 @@ type WebACLDetail struct {
 	Scope types.Scope
 }
 
+// GetWebACLDetail streams each Web ACL detail as its per-ACL GetWebACL
+// call completes, iterating over both CLOUDFRONT and REGIONAL scopes.
+// Streaming avoids the 30s consumer idle timeout in core-sdk
+// schema/platform.go when an account has many Web ACLs.
 func GetWebACLDetail(ctx context.Context, service schema.ServiceInterface, res chan<- any) error {
 	client := service.(*collector.Services).WAFv2
-	webACLDetails, err := describeWebACLDetails(ctx, client)
-	if err != nil {
-		log.CtxLogger(ctx).Warn("describeWebACLDetails error", zap.Error(err))
-		return err
-	}
-	for _, webACLDetail := range webACLDetails {
-		res <- webACLDetail
+
+	for _, scope := range types.Scope.Values("") {
+		webACLSummaryList, err := listWebACLs(ctx, client, scope)
+		if err != nil {
+			log.CtxLogger(ctx).Warn("listWebACLs error", zap.Error(err), zap.String("scope", string(scope)))
+			continue
+		}
+		for _, webACLSummary := range webACLSummaryList {
+			res <- WebACLDetail{
+				WebACL: getWebACL(ctx, client, webACLSummary.Id, webACLSummary.Name, scope),
+				Scope:  scope,
+			}
+		}
 	}
 
 	return nil
-}
-
-func describeWebACLDetails(ctx context.Context, c *wafv2.Client) (webACLDetails []WebACLDetail, err error) {
-
-	for _, scope := range types.Scope.Values("") {
-		webACLSummaryList, err := listWebACLs(ctx, c, scope)
-		if err != nil {
-			log.CtxLogger(ctx).Warn("listWebACLs error", zap.Error(err))
-			return nil, err
-		}
-		for _, webACLSummary := range webACLSummaryList {
-			webACLDetails = append(webACLDetails, WebACLDetail{
-				WebACL: getWebACL(ctx, c, webACLSummary.Id, webACLSummary.Name, scope),
-				Scope:  scope,
-			})
-		}
-	}
-
-	return webACLDetails, nil
 }
 
 func getWebACL(ctx context.Context, c *wafv2.Client, id *string, name *string, scope types.Scope) types.WebACL {

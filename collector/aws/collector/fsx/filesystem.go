@@ -53,35 +53,25 @@ type FileSystemDetail struct {
 	Aliases []types.Alias
 }
 
+// GetFileSystemDetail streams each FSx file system detail as its
+// alias lookup completes, avoiding the 30s consumer idle timeout in
+// core-sdk schema/platform.go.
 func GetFileSystemDetail(ctx context.Context, service schema.ServiceInterface, res chan<- any) error {
 	client := service.(*collector.Services).FSx
 
-	fileSystemDetails, err := describeFileSystemDetails(ctx, client)
+	fileSystems, err := describeFileSystem(ctx, client)
 	if err != nil {
-		log.CtxLogger(ctx).Warn("describeFileSystemDetails error", zap.Error(err))
+		log.CtxLogger(ctx).Warn("describeFileSystem error", zap.Error(err))
 		return err
 	}
 
-	for _, fileSystemDetail := range fileSystemDetails {
-		res <- fileSystemDetail
+	for _, fileSystem := range fileSystems {
+		res <- FileSystemDetail{
+			FileSystem: fileSystem,
+			Aliases:    describeFileSystemAliases(ctx, client, fileSystem),
+		}
 	}
 	return nil
-}
-
-func describeFileSystemDetails(ctx context.Context, c *fsx.Client) (fileSystemDetails []FileSystemDetail, err error) {
-
-	fileSystems, err := describeFileSystem(ctx, c)
-	if err != nil {
-		log.CtxLogger(ctx).Warn("describeFileSystem error", zap.Error(err))
-		return nil, err
-	}
-	for _, fileSystem := range fileSystems {
-		fileSystemDetails = append(fileSystemDetails, FileSystemDetail{
-			FileSystem: fileSystem,
-			Aliases:    describeFileSystemAliases(ctx, c, fileSystem),
-		})
-	}
-	return fileSystemDetails, nil
 }
 
 func describeFileSystemAliases(ctx context.Context, c *fsx.Client, system types.FileSystem) (aliases []types.Alias) {
