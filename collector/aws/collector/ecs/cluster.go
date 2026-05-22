@@ -59,8 +59,12 @@ func GetClusterDetail(ctx context.Context, service schema.ServiceInterface, res 
 		return err
 	}
 
-	var clusters []types.Cluster
-	// Describe clusters in batches of 100, which is the API limit.
+	// Describe clusters in batches of 100 (API limit) and stream each cluster
+	// as soon as its batch returns. Keeping the per-cluster enrichment + push
+	// inside the batch loop ensures the consumer's 30s idle timer in core-sdk
+	// schema/platform.go sees data within one DescribeClusters round-trip,
+	// even on accounts with thousands of clusters. Mirrors the streaming
+	// invariant established in 8295d1b / 5f3db2f.
 	for i := 0; i < len(clusterArns); i += 100 {
 		end := i + 100
 		if end > len(clusterArns) {
@@ -73,19 +77,16 @@ func GetClusterDetail(ctx context.Context, service schema.ServiceInterface, res 
 			log.CtxLogger(ctx).Warn("failed to describe ecs clusters", zap.Error(err))
 			continue
 		}
-		clusters = append(clusters, describedClusters...)
-	}
 
-	for _, cluster := range clusters {
+		for _, cluster := range describedClusters {
+			services := listServices(ctx, client, *cluster.ClusterArn)
+			tasks := listTasks(ctx, client, *cluster.ClusterArn)
 
-		services := listServices(ctx, client, *cluster.ClusterArn)
-
-		tasks := listTasks(ctx, client, *cluster.ClusterArn)
-
-		res <- &ClusterDetail{
-			Cluster:  cluster,
-			Services: services,
-			Tasks:    tasks,
+			res <- &ClusterDetail{
+				Cluster:  cluster,
+				Services: services,
+				Tasks:    tasks,
+			}
 		}
 	}
 
