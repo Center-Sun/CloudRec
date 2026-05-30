@@ -63,6 +63,12 @@ func GetDomainDetail(ctx context.Context, service schema.ServiceInterface, res c
 
 	for _, domain := range domains {
 		describeOutput := describeDomain(ctx, client, domain)
+		// describeDomain returns nil when DescribeDomain fails; skip rather
+		// than dereference (a single failed domain must not panic and abort
+		// the whole region's collection).
+		if describeOutput == nil {
+			continue
+		}
 		res <- DomainDetail{
 			DomainStatus: describeOutput.DomainStatus,
 		}

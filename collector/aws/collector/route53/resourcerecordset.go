@@ -50,27 +50,32 @@ type RecordSetDetailDetail struct {
 	ResourceRecordSets []types.ResourceRecordSet
 }
 
-// GetResourceRecordSetDetail streams each hosted-zone record set as the
-// per-zone ListResourceRecordSets paginator completes, avoiding the 30s
-// consumer idle timeout in core-sdk schema/platform.go when an account
-// has many hosted zones.
+// GetResourceRecordSetDetail streams each hosted zone as the
+// ListHostedZones pagination yields it; the per-zone
+// ListResourceRecordSets calls then stream their record sets. This
+// incremental push avoids the 30s consumer idle timeout in core-sdk
+// schema/platform.go when an account has many hosted zones.
 func GetResourceRecordSetDetail(ctx context.Context, service schema.ServiceInterface, res chan<- any) error {
 	client := service.(*collector.Services).Route53
 
-	hostedZones, err := listHostedZones(ctx, client)
-	if err != nil {
-		log.CtxLogger(ctx).Warn("listHostedZones error", zap.Error(err))
-		return err
-	}
-
-	for _, hostedZone := range hostedZones {
-		res <- RecordSetDetailDetail{
-			HostedZone:         hostedZone,
-			ResourceRecordSets: listResourceRecordSets(ctx, client, hostedZone),
+	input := &route53.ListHostedZonesInput{}
+	for {
+		output, err := client.ListHostedZones(ctx, input)
+		if err != nil {
+			log.CtxLogger(ctx).Warn("listHostedZones error", zap.Error(err))
+			return err
 		}
+		for _, hostedZone := range output.HostedZones {
+			res <- RecordSetDetailDetail{
+				HostedZone:         hostedZone,
+				ResourceRecordSets: listResourceRecordSets(ctx, client, hostedZone),
+			}
+		}
+		if !output.IsTruncated {
+			return nil
+		}
+		input.Marker = output.NextMarker
 	}
-
-	return nil
 }
 
 func listResourceRecordSets(ctx context.Context, c *route53.Client, hostZone types.HostedZone) (resourceRecordSets []types.ResourceRecordSet) {
@@ -89,24 +94,4 @@ func listResourceRecordSets(ctx context.Context, c *route53.Client, hostZone typ
 	}
 
 	return resourceRecordSets
-}
-
-func listHostedZones(ctx context.Context, c *route53.Client) (hostedZones []types.HostedZone, err error) {
-	input := &route53.ListHostedZonesInput{}
-	output, err := c.ListHostedZones(ctx, input)
-	if err != nil {
-		return nil, err
-	}
-	hostedZones = append(hostedZones, output.HostedZones...)
-	for output.IsTruncated {
-		input.Marker = output.NextMarker
-		output, err = c.ListHostedZones(ctx, input)
-		if err != nil {
-			log.CtxLogger(ctx).Warn("listHostedZones error", zap.Error(err))
-			return nil, err
-		}
-		hostedZones = append(hostedZones, output.HostedZones...)
-	}
-
-	return hostedZones, nil
 }

@@ -52,25 +52,31 @@ type FileSystemDetail struct {
 	FileSystemPolicy map[string]interface{}
 }
 
-// GetFileSystemDetail streams each EFS file system detail as its policy
-// fetch completes, avoiding the 30s consumer idle timeout in core-sdk
-// schema/platform.go when a region has many file systems.
+// GetFileSystemDetail streams each EFS file system detail as the
+// DescribeFileSystems pagination yields it and its policy fetch completes,
+// avoiding the 30s consumer idle timeout in core-sdk schema/platform.go
+// when a region has many file systems.
 func GetFileSystemDetail(ctx context.Context, service schema.ServiceInterface, res chan<- any) error {
 	client := service.(*collector.Services).EFS
 
-	fileSystems, err := describeFileSystem(ctx, client)
-	if err != nil {
-		log.CtxLogger(ctx).Warn("describeFileSystem error", zap.Error(err))
-		return err
-	}
-
-	for _, fileSystem := range fileSystems {
-		res <- FileSystemDetail{
-			FileSystem:       fileSystem,
-			FileSystemPolicy: getFileSystemPolicy(ctx, client, fileSystem),
+	input := &efs.DescribeFileSystemsInput{}
+	for {
+		output, err := client.DescribeFileSystems(ctx, input)
+		if err != nil {
+			log.CtxLogger(ctx).Warn("DescribeFileSystems error", zap.Error(err))
+			return err
 		}
+		for _, fileSystem := range output.FileSystems {
+			res <- FileSystemDetail{
+				FileSystem:       fileSystem,
+				FileSystemPolicy: getFileSystemPolicy(ctx, client, fileSystem),
+			}
+		}
+		if output.NextMarker == nil {
+			return nil
+		}
+		input.Marker = output.NextMarker
 	}
-	return nil
 }
 
 func getFileSystemPolicy(ctx context.Context, c *efs.Client, fileSystem types.FileSystemDescription) (policy map[string]interface{}) {
@@ -89,24 +95,4 @@ func getFileSystemPolicy(ctx context.Context, c *efs.Client, fileSystem types.Fi
 		return nil
 	}
 	return policy
-}
-
-func describeFileSystem(ctx context.Context, c *efs.Client) (fileSystems []types.FileSystemDescription, err error) {
-	input := &efs.DescribeFileSystemsInput{}
-	output, err := c.DescribeFileSystems(ctx, input)
-	if err != nil {
-		log.CtxLogger(ctx).Warn("DescribeFileSystems error", zap.Error(err))
-		return nil, err
-	}
-	fileSystems = append(fileSystems, output.FileSystems...)
-	for output.NextMarker != nil {
-		input.Marker = output.NextMarker
-		output, err = c.DescribeFileSystems(ctx, input)
-		if err != nil {
-			log.CtxLogger(ctx).Warn("DescribeFileSystems error", zap.Error(err))
-			return nil, err
-		}
-		fileSystems = append(fileSystems, output.FileSystems...)
-	}
-	return fileSystems, nil
 }

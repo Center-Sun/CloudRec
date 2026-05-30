@@ -161,49 +161,32 @@ type DomainDetail struct {
 	WhoIsServer *string
 }
 
-// GetTheDomainDetail streams each Route53 domain detail as its
-// GetDomainDetail call completes, avoiding the 30s consumer idle timeout
-// in core-sdk schema/platform.go when an account has many domains.
+// GetTheDomainDetail streams each Route53 domain as the ListDomains
+// pagination yields it and its GetDomainDetail call completes, avoiding
+// the 30s consumer idle timeout in core-sdk schema/platform.go when an
+// account has many domains.
 func GetTheDomainDetail(ctx context.Context, service schema.ServiceInterface, res chan<- any) error {
 
 	client := service.(*collector.Services).Route53Domains
 
-	domains, err := listDomains(ctx, client)
-	if err != nil {
-		log.CtxLogger(ctx).Warn("listDomains error", zap.Error(err))
-		return err
-	}
-
-	for _, domain := range domains {
-		res <- TheDomainDetail{
-			DomainSummary: domain,
-			DomainDetail:  getDomainDetail(ctx, client, domain),
-		}
-	}
-
-	return nil
-}
-
-func listDomains(ctx context.Context, c *route53domains.Client) (domains []types.DomainSummary, err error) {
-
 	input := &route53domains.ListDomainsInput{}
-	output, err := c.ListDomains(ctx, input)
-	if err != nil {
-		log.CtxLogger(ctx).Warn("listDomains error", zap.Error(err))
-		return nil, err
-	}
-	domains = append(domains, output.Domains...)
-	for output.NextPageMarker != nil {
-		input.Marker = output.NextPageMarker
-		output, err = c.ListDomains(ctx, input)
+	for {
+		output, err := client.ListDomains(ctx, input)
 		if err != nil {
 			log.CtxLogger(ctx).Warn("listDomains error", zap.Error(err))
-			return nil, err
+			return err
 		}
-		domains = append(domains, output.Domains...)
+		for _, domain := range output.Domains {
+			res <- TheDomainDetail{
+				DomainSummary: domain,
+				DomainDetail:  getDomainDetail(ctx, client, domain),
+			}
+		}
+		if output.NextPageMarker == nil {
+			return nil
+		}
+		input.Marker = output.NextPageMarker
 	}
-
-	return domains, nil
 }
 
 func getDomainDetail(ctx context.Context, c *route53domains.Client, domain types.DomainSummary) DomainDetail {

@@ -52,23 +52,24 @@ type FunctionDetail struct {
 }
 
 // GetFunctionDetail fetches the details for all Lambda functions in a
-// region. Each detail is pushed to res as its per-function GetPolicy /
-// ListFunctionURLConfigs / ListTags calls finish; do not refactor this
-// into a build-slice-then-push pattern, as that would risk the 30s
-// consumer idle timeout in core-sdk schema/platform.go (see commit
-// 8295d1b).
+// region. The ListFunctions pagination streams per page and each function
+// is pushed to res as its GetPolicy / ListFunctionURLConfigs / ListTags
+// calls finish; do not refactor back to a build-slice-then-push pattern,
+// as that would risk the 30s consumer idle timeout in core-sdk
+// schema/platform.go (see commit 8295d1b).
 func GetFunctionDetail(ctx context.Context, service schema.ServiceInterface, res chan<- any) error {
 	client := service.(*collector.Services).Lambda
 
-	functions, err := listFunctions(ctx, client)
-	if err != nil {
-		log.CtxLogger(ctx).Error("failed to list lambda functions", zap.Error(err))
-		return err
-	}
-
-	for _, function := range functions {
-		functionDetail := describeFunctionDetail(ctx, client, function)
-		res <- functionDetail
+	paginator := lambda.NewListFunctionsPaginator(client, &lambda.ListFunctionsInput{})
+	for paginator.HasMorePages() {
+		page, err := paginator.NextPage(ctx)
+		if err != nil {
+			log.CtxLogger(ctx).Error("failed to list lambda functions", zap.Error(err))
+			return err
+		}
+		for _, function := range page.Functions {
+			res <- describeFunctionDetail(ctx, client, function)
+		}
 	}
 
 	return nil
@@ -90,20 +91,6 @@ func describeFunctionDetail(ctx context.Context, client *lambda.Client, function
 		URLConfigs: urlConfigs,
 		Tags:       tags,
 	}
-}
-
-// listFunctions retrieves all Lambda functions in a region.
-func listFunctions(ctx context.Context, c *lambda.Client) ([]types.FunctionConfiguration, error) {
-	var functions []types.FunctionConfiguration
-	paginator := lambda.NewListFunctionsPaginator(c, &lambda.ListFunctionsInput{})
-	for paginator.HasMorePages() {
-		page, err := paginator.NextPage(ctx)
-		if err != nil {
-			return nil, err
-		}
-		functions = append(functions, page.Functions...)
-	}
-	return functions, nil
 }
 
 // getPolicy retrieves the resource-based policy for a function.

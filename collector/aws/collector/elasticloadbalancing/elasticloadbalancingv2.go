@@ -79,19 +79,15 @@ type ELBListenerDetail struct {
 	Listener types.Listener
 }
 
-// GetELBDetail streams each ELB detail as its secondary calls finish, so
-// the core-sdk consumer in schema/platform.go does not hit the 30s idle
-// timeout when a region has many load balancers.
+// GetELBDetail streams each ELB detail as the DescribeLoadBalancers
+// pagination yields it and its secondary calls finish, so the core-sdk
+// consumer in schema/platform.go does not hit the 30s idle timeout when a
+// region has many load balancers.
 func GetELBDetail(ctx context.Context, iService schema.ServiceInterface, res chan<- any) error {
 	elbClient := iService.(*collector.Services).ELB
 	ec2Client := iService.(*collector.Services).EC2
 
-	elbs, err := describeELBs(ctx, elbClient)
-	if err != nil {
-		return err
-	}
-
-	for _, elb := range elbs {
+	return forEachELB(ctx, elbClient, func(elb types.LoadBalancer) error {
 		listeners, err := describeELBListenersByLoadBalancerArn(ctx, elbClient, elb.LoadBalancerArn)
 		if err != nil {
 			log.CtxLogger(ctx).Warn("DescribeListeners error", zap.Error(err), zap.String("loadBalancerArn", aws.ToString(elb.LoadBalancerArn)))
@@ -116,33 +112,27 @@ func GetELBDetail(ctx context.Context, iService schema.ServiceInterface, res cha
 				},
 			}),
 		}
-	}
-
-	return nil
+		return nil
+	})
 }
 
-// GetELBListenerDetail streams each listener per LB. Same rationale as
+// GetELBListenerDetail streams each listener per LB as the
+// DescribeLoadBalancers pagination yields each LB. Same rationale as
 // GetELBDetail — incremental push keeps the consumer's idle timer warm.
 func GetELBListenerDetail(ctx context.Context, iService schema.ServiceInterface, res chan<- any) error {
 	elbClient := iService.(*collector.Services).ELB
 
-	elbs, err := describeELBs(ctx, elbClient)
-	if err != nil {
-		return err
-	}
-
-	for _, elb := range elbs {
+	return forEachELB(ctx, elbClient, func(elb types.LoadBalancer) error {
 		listeners, err := describeELBListenersByLoadBalancerArn(ctx, elbClient, elb.LoadBalancerArn)
 		if err != nil {
 			log.CtxLogger(ctx).Warn("DescribeListeners error", zap.Error(err), zap.String("loadBalancerArn", aws.ToString(elb.LoadBalancerArn)))
-			continue
+			return nil
 		}
 		for _, listener := range listeners {
 			res <- ELBListenerDetail{Listener: listener}
 		}
-	}
-
-	return nil
+		return nil
+	})
 }
 
 func describeELBListenersByLoadBalancerArn(ctx context.Context, c *elasticloadbalancingv2.Client, loadBalancerArn *string) (listeners []types.Listener, err error) {
@@ -169,24 +159,28 @@ func describeELBListenersByLoadBalancerArn(ctx context.Context, c *elasticloadba
 	return listeners, nil
 }
 
-func describeELBs(ctx context.Context, c *elasticloadbalancingv2.Client) (elbs []types.LoadBalancer, err error) {
+// forEachELB paginates DescribeLoadBalancers and invokes handle for each
+// load balancer as its page arrives, so callers stream per-LB instead of
+// buffering the whole region before the first push. Returns the first list
+// error encountered.
+func forEachELB(ctx context.Context, c *elasticloadbalancingv2.Client, handle func(types.LoadBalancer) error) error {
 	input := &elasticloadbalancingv2.DescribeLoadBalancersInput{
 		PageSize: aws.Int32(400),
 	}
-	output, err := c.DescribeLoadBalancers(ctx, input)
-	if err != nil {
-		log.CtxLogger(ctx).Warn("DescribeLoadBalancers error", zap.Error(err))
-		return nil, err
-	}
-	elbs = append(elbs, output.LoadBalancers...)
-	for output.NextMarker != nil {
-		input.Marker = output.NextMarker
-		output, err = c.DescribeLoadBalancers(ctx, input)
+	for {
+		output, err := c.DescribeLoadBalancers(ctx, input)
 		if err != nil {
 			log.CtxLogger(ctx).Warn("DescribeLoadBalancers error", zap.Error(err))
-			return nil, err
+			return err
 		}
-		elbs = append(elbs, output.LoadBalancers...)
+		for _, elb := range output.LoadBalancers {
+			if err := handle(elb); err != nil {
+				return err
+			}
+		}
+		if output.NextMarker == nil {
+			return nil
+		}
+		input.Marker = output.NextMarker
 	}
-	return elbs, nil
 }

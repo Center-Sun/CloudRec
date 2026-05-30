@@ -52,40 +52,44 @@ type SecurityGroupDetail struct {
 	SecurityGroupRules []types.SecurityGroupRule
 }
 
-// GetSecurityGroupDetail streams each SecurityGroupDetail as soon as its
-// rules are fetched, avoiding the 30s consumer idle timeout in core-sdk
-// schema/platform.go. If the per-SG rule fetch fails, the SG is still
-// emitted with nil rules — mirroring the existing
-// DescribeSecurityGroupDetailsByFilters helper (the previous code path
-// dropped the SG entirely, which was inconsistent).
+// GetSecurityGroupDetail streams each SecurityGroupDetail as the
+// DescribeSecurityGroups pagination yields it and its rules are fetched,
+// avoiding the 30s consumer idle timeout in core-sdk schema/platform.go.
+// If the per-SG rule fetch fails, the SG is still emitted with nil rules —
+// mirroring the existing DescribeSecurityGroupDetailsByFilters helper (the
+// previous code path dropped the SG entirely, which was inconsistent).
 func GetSecurityGroupDetail(ctx context.Context, iService schema.ServiceInterface, res chan<- any) (err error) {
 	client := iService.(*collector.Services).EC2
 
-	securityGroups, err := describeSecurityGroups(ctx, client)
-	if err != nil {
-		return err
-	}
-
-	for _, securityGroup := range securityGroups {
-		if securityGroup.GroupId == nil {
-			continue
-		}
-		securityGroupRules, err := describeSecurityGroupRulesByFilters(ctx, client, []types.Filter{
-			{
-				Name:   aws.String("group-id"),
-				Values: []string{*securityGroup.GroupId},
-			},
-		})
+	input := &ec2.DescribeSecurityGroupsInput{}
+	for {
+		output, err := client.DescribeSecurityGroups(ctx, input)
 		if err != nil {
-			log.CtxLogger(ctx).Warn("describe security group rule failed", zap.Error(err))
+			return err
 		}
-		res <- SecurityGroupDetail{
-			SecurityGroup:      securityGroup,
-			SecurityGroupRules: securityGroupRules,
+		for _, securityGroup := range output.SecurityGroups {
+			if securityGroup.GroupId == nil {
+				continue
+			}
+			securityGroupRules, err := describeSecurityGroupRulesByFilters(ctx, client, []types.Filter{
+				{
+					Name:   aws.String("group-id"),
+					Values: []string{*securityGroup.GroupId},
+				},
+			})
+			if err != nil {
+				log.CtxLogger(ctx).Warn("describe security group rule failed", zap.Error(err))
+			}
+			res <- SecurityGroupDetail{
+				SecurityGroup:      securityGroup,
+				SecurityGroupRules: securityGroupRules,
+			}
 		}
+		if output.NextToken == nil {
+			return nil
+		}
+		input.NextToken = output.NextToken
 	}
-
-	return nil
 }
 
 func DescribeSecurityGroupDetailsByFilters(ctx context.Context, c *ec2.Client, filters []types.Filter) (securityGroupDetails []SecurityGroupDetail) {
@@ -150,22 +154,4 @@ func describeSecurityGroupRulesByFilters(ctx context.Context, c *ec2.Client, fil
 		securityGroupRules = append(securityGroupRules, output.SecurityGroupRules...)
 	}
 	return securityGroupRules, nil
-}
-
-func describeSecurityGroups(ctx context.Context, c *ec2.Client) (securityGroups []types.SecurityGroup, err error) {
-	input := &ec2.DescribeSecurityGroupsInput{}
-	output, err := c.DescribeSecurityGroups(ctx, input)
-	if err != nil {
-		return nil, err
-	}
-	securityGroups = append(securityGroups, output.SecurityGroups...)
-	for output.NextToken != nil {
-		input.NextToken = output.NextToken
-		output, err = c.DescribeSecurityGroups(ctx, input)
-		if err != nil {
-			return nil, err
-		}
-		securityGroups = append(securityGroups, output.SecurityGroups...)
-	}
-	return securityGroups, nil
 }

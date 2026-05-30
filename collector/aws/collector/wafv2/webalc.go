@@ -52,24 +52,34 @@ type WebACLDetail struct {
 	Scope types.Scope
 }
 
-// GetWebACLDetail streams each Web ACL detail as its per-ACL GetWebACL
-// call completes, iterating over both CLOUDFRONT and REGIONAL scopes.
-// Streaming avoids the 30s consumer idle timeout in core-sdk
-// schema/platform.go when an account has many Web ACLs.
+// GetWebACLDetail streams each Web ACL as the per-scope ListWebACLs
+// pagination yields it and its GetWebACL call completes, iterating over
+// both CLOUDFRONT and REGIONAL scopes. Streaming avoids the 30s consumer
+// idle timeout in core-sdk schema/platform.go when an account has many
+// Web ACLs.
 func GetWebACLDetail(ctx context.Context, service schema.ServiceInterface, res chan<- any) error {
 	client := service.(*collector.Services).WAFv2
 
 	for _, scope := range types.Scope.Values("") {
-		webACLSummaryList, err := listWebACLs(ctx, client, scope)
-		if err != nil {
-			log.CtxLogger(ctx).Warn("listWebACLs error", zap.Error(err), zap.String("scope", string(scope)))
-			continue
+		input := &wafv2.ListWebACLsInput{
+			Scope: scope,
 		}
-		for _, webACLSummary := range webACLSummaryList {
-			res <- WebACLDetail{
-				WebACL: getWebACL(ctx, client, webACLSummary.Id, webACLSummary.Name, scope),
-				Scope:  scope,
+		for {
+			output, err := client.ListWebACLs(ctx, input)
+			if err != nil {
+				log.CtxLogger(ctx).Warn("listWebACLs error", zap.Error(err), zap.String("scope", string(scope)))
+				break
 			}
+			for _, webACLSummary := range output.WebACLs {
+				res <- WebACLDetail{
+					WebACL: getWebACL(ctx, client, webACLSummary.Id, webACLSummary.Name, scope),
+					Scope:  scope,
+				}
+			}
+			if output.NextMarker == nil {
+				break
+			}
+			input.NextMarker = output.NextMarker
 		}
 	}
 
@@ -89,27 +99,4 @@ func getWebACL(ctx context.Context, c *wafv2.Client, id *string, name *string, s
 	}
 
 	return *output.WebACL
-}
-
-func listWebACLs(ctx context.Context, c *wafv2.Client, scope types.Scope) (webACLSummaryList []types.WebACLSummary, err error) {
-	input := &wafv2.ListWebACLsInput{
-		Scope: scope,
-	}
-	output, err := c.ListWebACLs(ctx, input)
-	if err != nil {
-		log.CtxLogger(ctx).Warn("listWebACLs error", zap.Error(err))
-		return nil, err
-	}
-	webACLSummaryList = append(webACLSummaryList, output.WebACLs...)
-	for output.NextMarker != nil {
-		input.NextMarker = output.NextMarker
-		output, err = c.ListWebACLs(ctx, input)
-		if err != nil {
-			log.CtxLogger(ctx).Warn("listWebACLs error", zap.Error(err))
-			return nil, err
-		}
-		webACLSummaryList = append(webACLSummaryList, output.WebACLs...)
-	}
-
-	return webACLSummaryList, nil
 }

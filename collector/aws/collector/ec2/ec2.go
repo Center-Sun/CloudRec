@@ -58,55 +58,39 @@ type InstanceDetail struct {
 	// any information about EC2 instance
 }
 
-// GetInstanceDetail streams each EC2 instance detail as its security
-// group lookup completes, avoiding the 30s consumer idle timeout in
-// core-sdk schema/platform.go when a region has many instances.
+// GetInstanceDetail streams each EC2 instance detail as the
+// DescribeInstances pagination yields it and its security group lookup
+// completes — both the listing and the per-instance enrich push
+// incrementally, avoiding the 30s consumer idle timeout in core-sdk
+// schema/platform.go when a region has many instances.
 func GetInstanceDetail(ctx context.Context, iService schema.ServiceInterface, res chan<- any) (err error) {
 	client := iService.(*collector.Services).EC2
 
-	instances, err := describeInstance(ctx, client)
-	if err != nil {
-		log.CtxLogger(ctx).Warn("describeInstance failed", zap.Error(err))
-		return err
-	}
-
-	for _, instance := range instances {
-		res <- InstanceDetail{
-			Instance: instance,
-			SecurityGroups: DescribeSecurityGroupDetailsByFilters(ctx, client, []types.Filter{
-				{
-					Name:   aws.String("group-id"),
-					Values: getInstanceSecurityGroupIds(instance),
-				},
-			}),
+	input := &ec2.DescribeInstancesInput{}
+	for {
+		output, err := client.DescribeInstances(ctx, input)
+		if err != nil {
+			log.CtxLogger(ctx).Warn("describeInstance failed", zap.Error(err))
+			return err
 		}
-	}
-
-	return nil
-}
-
-func describeInstance(ctx context.Context, client *ec2.Client) (instances []types.Instance, err error) {
-	input := &ec2.DescribeInstancesInput{
-		NextToken: nil,
-	}
-	output, err := client.DescribeInstances(ctx, input)
-	if err != nil {
-		return nil, err
-	}
-	for _, reservation := range output.Reservations {
-		instances = append(instances, reservation.Instances...)
-	}
-	for output.NextToken != nil {
-		input = &ec2.DescribeInstancesInput{
-			NextToken: output.NextToken,
-		}
-		output, err = client.DescribeInstances(ctx, input)
 		for _, reservation := range output.Reservations {
-			instances = append(instances, reservation.Instances...)
+			for _, instance := range reservation.Instances {
+				res <- InstanceDetail{
+					Instance: instance,
+					SecurityGroups: DescribeSecurityGroupDetailsByFilters(ctx, client, []types.Filter{
+						{
+							Name:   aws.String("group-id"),
+							Values: getInstanceSecurityGroupIds(instance),
+						},
+					}),
+				}
+			}
 		}
+		if output.NextToken == nil {
+			return nil
+		}
+		input.NextToken = output.NextToken
 	}
-
-	return instances, err
 }
 
 func getInstanceSecurityGroupIds(instance types.Instance) (ids []string) {

@@ -59,27 +59,33 @@ type InstanceDetail struct {
 	VPCSecurityGroups []ec2Type.SecurityGroup
 }
 
-// GetInstanceDetail streams each RDS instance detail as its security
-// group lookups finish, to avoid the 30s consumer idle timeout in
-// core-sdk schema/platform.go.
+// GetInstanceDetail streams each RDS instance detail as the
+// DescribeDBInstances pagination yields it and its security group lookups
+// finish, avoiding the 30s consumer idle timeout in core-sdk
+// schema/platform.go.
 func GetInstanceDetail(ctx context.Context, service schema.ServiceInterface, res chan<- any) error {
 	services := service.(*collector.Services)
 	rdsClient := services.RDS
 	ec2Client := services.EC2
 
-	instances, err := describeInstances(ctx, rdsClient)
-	if err != nil {
-		return err
-	}
-
-	for _, instance := range instances {
-		res <- InstanceDetail{
-			DBInstance:        instance,
-			DBSecurityGroups:  describeDBSecurityGroups(ctx, rdsClient, instance.DBSecurityGroups),
-			VPCSecurityGroups: describeVPCSecurityGroups(ctx, ec2Client, instance.VpcSecurityGroups),
+	input := &rds.DescribeDBInstancesInput{}
+	for {
+		output, err := rdsClient.DescribeDBInstances(ctx, input)
+		if err != nil {
+			return err
 		}
+		for _, instance := range output.DBInstances {
+			res <- InstanceDetail{
+				DBInstance:        instance,
+				DBSecurityGroups:  describeDBSecurityGroups(ctx, rdsClient, instance.DBSecurityGroups),
+				VPCSecurityGroups: describeVPCSecurityGroups(ctx, ec2Client, instance.VpcSecurityGroups),
+			}
+		}
+		if output.Marker == nil {
+			return nil
+		}
+		input.Marker = output.Marker
 	}
-	return nil
 }
 
 func describeVPCSecurityGroups(ctx context.Context, ec2Client *ec2.Client, groups []rdsType.VpcSecurityGroupMembership) (vpcSecurityGroups []ec2Type.SecurityGroup) {
@@ -130,24 +136,4 @@ func describeDBSecurityGroups(ctx context.Context, c *rds.Client, groups []types
 		}
 	}
 	return dBSecurityGroups
-}
-
-// Obtain the database instance information
-func describeInstances(ctx context.Context, c *rds.Client) (instances []types.DBInstance, err error) {
-	input := &rds.DescribeDBInstancesInput{}
-	output, err := c.DescribeDBInstances(ctx, input)
-	if err != nil {
-		return nil, err
-	}
-	instances = append(instances, output.DBInstances...)
-	for output.Marker != nil {
-		input.Marker = output.Marker
-		output, err = c.DescribeDBInstances(ctx, input)
-		if err != nil {
-			return nil, err
-		}
-		instances = append(instances, output.DBInstances...)
-	}
-
-	return instances, nil
 }

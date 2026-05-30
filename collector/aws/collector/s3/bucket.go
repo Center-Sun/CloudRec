@@ -58,28 +58,36 @@ type BucketDetail struct {
 	LoggingEnabled *types.LoggingEnabled
 }
 
-// GetBucketDetail streams each S3 bucket detail as its three secondary
-// calls (Policy / Versioning / Logging) complete, avoiding the 30s
-// consumer idle timeout in core-sdk schema/platform.go when an account
-// has many buckets.
+// GetBucketDetail streams each S3 bucket as the ListBuckets pagination
+// yields it and its three secondary calls (Policy / Versioning / Logging)
+// complete, avoiding the 30s consumer idle timeout in core-sdk
+// schema/platform.go when an account has many buckets.
 func GetBucketDetail(ctx context.Context, service schema.ServiceInterface, res chan<- any) error {
 	client := service.(*collector.Services).S3
 
-	buckets, err := listBuckets(ctx, client)
-	if err != nil {
-		log.CtxLogger(ctx).Warn("listBuckets error", zap.Error(err))
-		return err
+	bucketRegion := client.Options().Region
+	input := &s3.ListBucketsInput{
+		BucketRegion: &bucketRegion,
 	}
-
-	for _, bucket := range buckets {
-		res <- BucketDetail{
-			Bucket:         bucket,
-			Policy:         getBucketPolicy(ctx, client, bucket),
-			Versioning:     getVersioning(ctx, client, bucket),
-			LoggingEnabled: getLoggingEnabled(ctx, client, bucket),
+	for {
+		output, err := client.ListBuckets(ctx, input)
+		if err != nil {
+			log.CtxLogger(ctx).Warn("listBuckets error", zap.Error(err))
+			return err
 		}
+		for _, bucket := range output.Buckets {
+			res <- BucketDetail{
+				Bucket:         bucket,
+				Policy:         getBucketPolicy(ctx, client, bucket),
+				Versioning:     getVersioning(ctx, client, bucket),
+				LoggingEnabled: getLoggingEnabled(ctx, client, bucket),
+			}
+		}
+		if output.ContinuationToken == nil {
+			return nil
+		}
+		input.ContinuationToken = output.ContinuationToken
 	}
-	return nil
 }
 
 func getLoggingEnabled(ctx context.Context, c *s3.Client, bucket types.Bucket) *types.LoggingEnabled {
@@ -119,28 +127,4 @@ func getBucketPolicy(ctx context.Context, c *s3.Client, bucket types.Bucket) (po
 		return nil
 	}
 	return policy
-}
-
-func listBuckets(ctx context.Context, c *s3.Client) (buckets []types.Bucket, err error) {
-	bucketRegion := c.Options().Region
-	listBucketsInput := &s3.ListBucketsInput{
-		BucketRegion: &bucketRegion,
-	}
-	listBucketsOutput, err := c.ListBuckets(ctx, listBucketsInput)
-	if err != nil {
-		log.CtxLogger(ctx).Warn("listBuckets error", zap.Error(err))
-		return nil, err
-	}
-	buckets = append(buckets, listBucketsOutput.Buckets...)
-	for listBucketsOutput.ContinuationToken != nil {
-		listBucketsInput.ContinuationToken = listBucketsOutput.ContinuationToken
-		listBucketsOutput, err = c.ListBuckets(ctx, listBucketsInput)
-		if err != nil {
-			log.CtxLogger(ctx).Warn("listBuckets error", zap.Error(err))
-			return nil, err
-		}
-		buckets = append(buckets, listBucketsOutput.Buckets...)
-	}
-
-	return buckets, nil
 }
