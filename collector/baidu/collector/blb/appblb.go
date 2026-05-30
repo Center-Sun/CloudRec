@@ -16,12 +16,12 @@
 package blb
 
 import (
-	"github.com/core-sdk/constant"
-	"github.com/core-sdk/log"
-	"github.com/core-sdk/schema"
 	"context"
 	"github.com/baidubce/bce-sdk-go/services/appblb"
 	"github.com/cloudrec/baidu/collector"
+	"github.com/core-sdk/constant"
+	"github.com/core-sdk/log"
+	"github.com/core-sdk/schema"
 	"go.uber.org/zap"
 )
 
@@ -30,7 +30,25 @@ type AppBLBDetail struct {
 	ListenerList             []appblb.AppAllListenerModel
 	SecurityGroups           []appblb.BlbSecurityGroupModel
 	EnterpriseSecurityGroups []appblb.BlbEnterpriseSecurityGroupModel
-	AppServerGroupList       []appblb.AppServerGroup
+	AppServerGroupList       []AppServerGroupDetail
+	AppIpGroupList           []AppIpGroupDetail
+}
+
+// AppServerGroupDetail enriches an app server group with its backend real
+// servers (DescribeBlbRs), which the group description endpoint does not return.
+// The embedded AppServerGroup is anonymous so its fields stay flattened and
+// existing JSON paths (e.g. $.AppServerGroupList[*].id) keep resolving.
+type AppServerGroupDetail struct {
+	appblb.AppServerGroup
+	BackendServerList []appblb.AppBackendServer `json:"backendServerList"`
+}
+
+// AppIpGroupDetail enriches an app IP group with its backend members
+// (DescribeAppIpGroupMember). An APP BLB uses either server groups or IP groups
+// for its backends; collecting both makes the real backends visible regardless.
+type AppIpGroupDetail struct {
+	appblb.AppIpGroup
+	MemberList []appblb.AppIpGroupMember `json:"memberList"`
 }
 
 func GetAppBLBResource() schema.Resource {
@@ -66,6 +84,7 @@ func GetAppBLBResource() schema.Resource {
 						SecurityGroups:           describeAppBLBSecurityGroups(ctx, client, i.BlbId),
 						EnterpriseSecurityGroups: describeAppBLBEnterpriseSecurityGroups(ctx, client, i.BlbId),
 						AppServerGroupList:       describeAppServerGroup(ctx, client, i.BlbId),
+						AppIpGroupList:           describeAppIpGroup(ctx, client, i.BlbId),
 					}
 					res <- d
 				}
@@ -128,7 +147,7 @@ func describeAppBLBEnterpriseSecurityGroups(ctx context.Context, client *appblb.
 	return resp.BlbEnterpriseSecurityGroups
 }
 
-func describeAppServerGroup(ctx context.Context, client *appblb.Client, blbId string) (appServerGroupList []appblb.AppServerGroup) {
+func describeAppServerGroup(ctx context.Context, client *appblb.Client, blbId string) (appServerGroupList []AppServerGroupDetail) {
 	args := &appblb.DescribeAppServerGroupArgs{
 		Marker:  "",
 		MaxKeys: 50,
@@ -139,7 +158,12 @@ func describeAppServerGroup(ctx context.Context, client *appblb.Client, blbId st
 			log.CtxLogger(ctx).Warn("describeAppServerGroup error", zap.Error(err))
 			return
 		}
-		appServerGroupList = append(appServerGroupList, response.AppServerGroupList...)
+		for _, sg := range response.AppServerGroupList {
+			appServerGroupList = append(appServerGroupList, AppServerGroupDetail{
+				AppServerGroup:    sg,
+				BackendServerList: describeBlbRs(ctx, client, blbId, sg.Id),
+			})
+		}
 		if response.NextMarker == "" {
 			break
 		}
@@ -147,4 +171,76 @@ func describeAppServerGroup(ctx context.Context, client *appblb.Client, blbId st
 	}
 
 	return appServerGroupList
+}
+
+// describeBlbRs lists the backend real servers bound to one app server group.
+func describeBlbRs(ctx context.Context, client *appblb.Client, blbId string, sgId string) (backendServerList []appblb.AppBackendServer) {
+	args := &appblb.DescribeBlbRsArgs{
+		Marker:  "",
+		MaxKeys: 50,
+		SgId:    sgId,
+	}
+	for {
+		response, err := client.DescribeBlbRs(blbId, args)
+		if err != nil {
+			log.CtxLogger(ctx).Warn("describeBlbRs error", zap.Error(err))
+			return
+		}
+		backendServerList = append(backendServerList, response.BackendServerList...)
+		if response.NextMarker == "" {
+			break
+		}
+		args.Marker = response.NextMarker
+	}
+
+	return backendServerList
+}
+
+func describeAppIpGroup(ctx context.Context, client *appblb.Client, blbId string) (appIpGroupList []AppIpGroupDetail) {
+	args := &appblb.DescribeAppIpGroupArgs{
+		Marker:  "",
+		MaxKeys: 50,
+	}
+	for {
+		response, err := client.DescribeAppIpGroup(blbId, args)
+		if err != nil {
+			log.CtxLogger(ctx).Warn("describeAppIpGroup error", zap.Error(err))
+			return
+		}
+		for _, ig := range response.AppIpGroupList {
+			appIpGroupList = append(appIpGroupList, AppIpGroupDetail{
+				AppIpGroup: ig,
+				MemberList: describeAppIpGroupMembers(ctx, client, blbId, ig.Id),
+			})
+		}
+		if response.NextMarker == "" {
+			break
+		}
+		args.Marker = response.NextMarker
+	}
+
+	return appIpGroupList
+}
+
+// describeAppIpGroupMembers lists the backend members bound to one app IP group.
+func describeAppIpGroupMembers(ctx context.Context, client *appblb.Client, blbId string, ipGroupId string) (memberList []appblb.AppIpGroupMember) {
+	args := &appblb.DescribeAppIpGroupMemberArgs{
+		Marker:    "",
+		MaxKeys:   50,
+		IpGroupId: ipGroupId,
+	}
+	for {
+		response, err := client.DescribeAppIpGroupMember(blbId, args)
+		if err != nil {
+			log.CtxLogger(ctx).Warn("describeAppIpGroupMember error", zap.Error(err))
+			return
+		}
+		memberList = append(memberList, response.MemberList...)
+		if response.NextMarker == "" {
+			break
+		}
+		args.Marker = response.NextMarker
+	}
+
+	return memberList
 }
