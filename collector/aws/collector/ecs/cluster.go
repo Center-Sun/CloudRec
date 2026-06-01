@@ -26,6 +26,20 @@ import (
 	"go.uber.org/zap"
 )
 
+// ecsAPI is the narrow subset of the ecs client used by this collector,
+// declared so the streaming helper can be exercised with a fake in tests. The
+// signatures mirror the SDK exactly so the concrete *ecs.Client satisfies it,
+// including the paginator-client interfaces it feeds (ListClustersAPIClient,
+// ListServicesAPIClient, ListTasksAPIClient).
+type ecsAPI interface {
+	ListClusters(context.Context, *ecs.ListClustersInput, ...func(*ecs.Options)) (*ecs.ListClustersOutput, error)
+	DescribeClusters(context.Context, *ecs.DescribeClustersInput, ...func(*ecs.Options)) (*ecs.DescribeClustersOutput, error)
+	ListServices(context.Context, *ecs.ListServicesInput, ...func(*ecs.Options)) (*ecs.ListServicesOutput, error)
+	DescribeServices(context.Context, *ecs.DescribeServicesInput, ...func(*ecs.Options)) (*ecs.DescribeServicesOutput, error)
+	ListTasks(context.Context, *ecs.ListTasksInput, ...func(*ecs.Options)) (*ecs.ListTasksOutput, error)
+	DescribeTasks(context.Context, *ecs.DescribeTasksInput, ...func(*ecs.Options)) (*ecs.DescribeTasksOutput, error)
+}
+
 // GetClusterResource returns a Cluster Resource
 func GetClusterResource() schema.Resource {
 	return schema.Resource{
@@ -53,18 +67,22 @@ type ClusterDetail struct {
 func GetClusterDetail(ctx context.Context, service schema.ServiceInterface, res chan<- any) error {
 	client := service.(*collector.Services).ECS
 
+	return streamClusters(ctx, client, res)
+}
+
+// streamClusters lists every cluster ARN, then describes them in batches of 100
+// (API limit) and streams each cluster as soon as its batch returns. Keeping the
+// per-cluster enrichment + push inside the batch loop ensures the consumer's 30s
+// idle timer in core-sdk schema/platform.go sees data within one DescribeClusters
+// round-trip, even on accounts with thousands of clusters. Mirrors the streaming
+// invariant established in 8295d1b / 5f3db2f.
+func streamClusters(ctx context.Context, client ecsAPI, res chan<- any) error {
 	clusterArns, err := listClusters(ctx, client)
 	if err != nil {
 		log.CtxLogger(ctx).Error("failed to list ecs clusters", zap.Error(err))
 		return err
 	}
 
-	// Describe clusters in batches of 100 (API limit) and stream each cluster
-	// as soon as its batch returns. Keeping the per-cluster enrichment + push
-	// inside the batch loop ensures the consumer's 30s idle timer in core-sdk
-	// schema/platform.go sees data within one DescribeClusters round-trip,
-	// even on accounts with thousands of clusters. Mirrors the streaming
-	// invariant established in 8295d1b / 5f3db2f.
 	for i := 0; i < len(clusterArns); i += 100 {
 		end := i + 100
 		if end > len(clusterArns) {
@@ -94,7 +112,7 @@ func GetClusterDetail(ctx context.Context, service schema.ServiceInterface, res 
 }
 
 // listClusters retrieves all ECS cluster ARNs in a region.
-func listClusters(ctx context.Context, c *ecs.Client) ([]string, error) {
+func listClusters(ctx context.Context, c ecsAPI) ([]string, error) {
 	var clusterArns []string
 	paginator := ecs.NewListClustersPaginator(c, &ecs.ListClustersInput{})
 	for paginator.HasMorePages() {
@@ -108,7 +126,7 @@ func listClusters(ctx context.Context, c *ecs.Client) ([]string, error) {
 }
 
 // describeClusters retrieves the details for a list of clusters.
-func describeClusters(ctx context.Context, c *ecs.Client, clusterArns []string) ([]types.Cluster, error) {
+func describeClusters(ctx context.Context, c ecsAPI, clusterArns []string) ([]types.Cluster, error) {
 	output, err := c.DescribeClusters(ctx, &ecs.DescribeClustersInput{Clusters: clusterArns, Include: []types.ClusterField{types.ClusterFieldTags, types.ClusterFieldSettings}})
 	if err != nil {
 		return nil, err
@@ -117,7 +135,7 @@ func describeClusters(ctx context.Context, c *ecs.Client, clusterArns []string) 
 }
 
 // listServices retrieves all ECS service ARNs in a cluster.
-func listServices(ctx context.Context, c *ecs.Client, clusterArn string) []types.Service {
+func listServices(ctx context.Context, c ecsAPI, clusterArn string) []types.Service {
 	var services []types.Service
 	paginator := ecs.NewListServicesPaginator(c, &ecs.ListServicesInput{Cluster: &clusterArn})
 	for paginator.HasMorePages() {
@@ -139,7 +157,7 @@ func listServices(ctx context.Context, c *ecs.Client, clusterArn string) []types
 }
 
 // listTasks retrieves all ECS task ARNs in a cluster.
-func listTasks(ctx context.Context, c *ecs.Client, clusterArn string) []types.Task {
+func listTasks(ctx context.Context, c ecsAPI, clusterArn string) []types.Task {
 	var tasks []types.Task
 	paginator := ecs.NewListTasksPaginator(c, &ecs.ListTasksInput{Cluster: &clusterArn})
 	for paginator.HasMorePages() {

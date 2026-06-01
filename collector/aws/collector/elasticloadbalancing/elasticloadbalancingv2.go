@@ -30,6 +30,15 @@ import (
 	"go.uber.org/zap"
 )
 
+// elbv2API is the narrow subset of the elasticloadbalancingv2 client used by
+// this collector, declared so the streaming helpers can be exercised with a
+// fake in tests. The signatures mirror the SDK exactly so the concrete
+// *elasticloadbalancingv2.Client satisfies it.
+type elbv2API interface {
+	DescribeLoadBalancers(context.Context, *elasticloadbalancingv2.DescribeLoadBalancersInput, ...func(*elasticloadbalancingv2.Options)) (*elasticloadbalancingv2.DescribeLoadBalancersOutput, error)
+	DescribeListeners(context.Context, *elasticloadbalancingv2.DescribeListenersInput, ...func(*elasticloadbalancingv2.Options)) (*elasticloadbalancingv2.DescribeListenersOutput, error)
+}
+
 // GetELBResource returns a  ELB Resource
 // ELB is elasticloadbalancingv2
 func GetELBResource() schema.Resource {
@@ -87,31 +96,60 @@ func GetELBDetail(ctx context.Context, iService schema.ServiceInterface, res cha
 	elbClient := iService.(*collector.Services).ELB
 	ec2Client := iService.(*collector.Services).EC2
 
-	return forEachELB(ctx, elbClient, func(elb types.LoadBalancer) error {
-		listeners, err := describeELBListenersByLoadBalancerArn(ctx, elbClient, elb.LoadBalancerArn)
-		if err != nil {
-			log.CtxLogger(ctx).Warn("DescribeListeners error", zap.Error(err), zap.String("loadBalancerArn", aws.ToString(elb.LoadBalancerArn)))
-		}
-		var vpcDetails []ec2.VPCDetail
-		if elb.VpcId != nil {
-			vpcDetails = ec2.DescribeVPCDetailsByFilters(ctx, ec2Client, []types2.Filter{
+	return streamELBDetails(
+		ctx,
+		elbClient,
+		res,
+		func(ctx context.Context, elb types.LoadBalancer) []ec2.VPCDetail {
+			if elb.VpcId == nil {
+				return nil
+			}
+			return ec2.DescribeVPCDetailsByFilters(ctx, ec2Client, []types2.Filter{
 				{
 					Name:   aws.String("vpc-id"),
 					Values: []string{*elb.VpcId},
 				},
 			})
-		}
-		res <- ELBDetail{
-			ELB:       elb,
-			Listeners: listeners,
-			VPC:       vpcDetails,
-			SecurityGroups: ec2.DescribeSecurityGroupDetailsByFilters(ctx, ec2Client, []types2.Filter{
+		},
+		func(ctx context.Context, elb types.LoadBalancer) []ec2.SecurityGroupDetail {
+			return ec2.DescribeSecurityGroupDetailsByFilters(ctx, ec2Client, []types2.Filter{
 				{
 					Name:   aws.String("group-id"),
 					Values: elb.SecurityGroups,
 				},
-			}),
+			})
+		},
+	)
+}
+
+// streamELBDetails paginates DescribeLoadBalancers via forEachELB and pushes
+// each ELBDetail as soon as the page yields the LB and its listener call
+// returns. The VPC / SecurityGroup enrichment is injected so the streaming
+// behaviour can be exercised without an ec2 client; both callbacks are
+// non-nil in production and a nil callback simply skips that field.
+func streamELBDetails(
+	ctx context.Context,
+	c elbv2API,
+	res chan<- any,
+	describeVPCDetails func(context.Context, types.LoadBalancer) []ec2.VPCDetail,
+	describeSecurityGroupDetails func(context.Context, types.LoadBalancer) []ec2.SecurityGroupDetail,
+) error {
+	return forEachELB(ctx, c, func(elb types.LoadBalancer) error {
+		listeners, err := describeELBListenersByLoadBalancerArn(ctx, c, elb.LoadBalancerArn)
+		if err != nil {
+			log.CtxLogger(ctx).Warn("DescribeListeners error", zap.Error(err), zap.String("loadBalancerArn", aws.ToString(elb.LoadBalancerArn)))
 		}
+		detail := ELBDetail{
+			ELB:       elb,
+			Listeners: listeners,
+		}
+		if describeVPCDetails != nil {
+			detail.VPC = describeVPCDetails(ctx, elb)
+		}
+		if describeSecurityGroupDetails != nil {
+			detail.SecurityGroups = describeSecurityGroupDetails(ctx, elb)
+		}
+		res <- detail
 		return nil
 	})
 }
@@ -122,8 +160,14 @@ func GetELBDetail(ctx context.Context, iService schema.ServiceInterface, res cha
 func GetELBListenerDetail(ctx context.Context, iService schema.ServiceInterface, res chan<- any) error {
 	elbClient := iService.(*collector.Services).ELB
 
-	return forEachELB(ctx, elbClient, func(elb types.LoadBalancer) error {
-		listeners, err := describeELBListenersByLoadBalancerArn(ctx, elbClient, elb.LoadBalancerArn)
+	return streamELBListeners(ctx, elbClient, res)
+}
+
+// streamELBListeners paginates DescribeLoadBalancers via forEachELB and pushes
+// each LB's listeners as soon as the page yields the LB.
+func streamELBListeners(ctx context.Context, c elbv2API, res chan<- any) error {
+	return forEachELB(ctx, c, func(elb types.LoadBalancer) error {
+		listeners, err := describeELBListenersByLoadBalancerArn(ctx, c, elb.LoadBalancerArn)
 		if err != nil {
 			log.CtxLogger(ctx).Warn("DescribeListeners error", zap.Error(err), zap.String("loadBalancerArn", aws.ToString(elb.LoadBalancerArn)))
 			return nil
@@ -135,7 +179,7 @@ func GetELBListenerDetail(ctx context.Context, iService schema.ServiceInterface,
 	})
 }
 
-func describeELBListenersByLoadBalancerArn(ctx context.Context, c *elasticloadbalancingv2.Client, loadBalancerArn *string) (listeners []types.Listener, err error) {
+func describeELBListenersByLoadBalancerArn(ctx context.Context, c elbv2API, loadBalancerArn *string) (listeners []types.Listener, err error) {
 	if loadBalancerArn == nil {
 		return listeners, nil
 	}
@@ -163,7 +207,7 @@ func describeELBListenersByLoadBalancerArn(ctx context.Context, c *elasticloadba
 // load balancer as its page arrives, so callers stream per-LB instead of
 // buffering the whole region before the first push. Returns the first list
 // error encountered.
-func forEachELB(ctx context.Context, c *elasticloadbalancingv2.Client, handle func(types.LoadBalancer) error) error {
+func forEachELB(ctx context.Context, c elbv2API, handle func(types.LoadBalancer) error) error {
 	input := &elasticloadbalancingv2.DescribeLoadBalancersInput{
 		PageSize: aws.Int32(400),
 	}
